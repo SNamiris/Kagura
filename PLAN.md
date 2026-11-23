@@ -106,7 +106,7 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 
 **技术选型**
 - 桌面壳：**Tauri**（Rust 后端 + Web 前端），已定。Rust 生态有 BLAKE3、SQLite、JSON Schema 校验
-- 前端：框架待定（React / Vue / Svelte），需要虚拟列表（资产近万份）
+- 前端：React + TypeScript + Vite，虚拟列表 / 网格使用 TanStack Virtual
 - 预览：babylon-mmd（PMX、VMD、镜头、音频），不支持 MME
 - 索引：SQLite + FTS5（日文、中文全文搜索）
 - 解析：自写 PMX/VMD 头部解析（格式公开），readme 按 cp932 → utf-8 → gbk 解码
@@ -217,6 +217,7 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 ## 8. 决定记录
 
 **已决定（2026-11-24）**
+- [x] 前端采用 React + TypeScript + Vite；资产浏览的虚拟列表和网格使用 TanStack Virtual。
 - [x] 记录文件换行：库内统一 LF；新建文件用 LF、无 BOM；写回已有文件时保留原换行和 BOM（兜底）；check 报告不是 LF 的文件，可用 `normalize_newlines` 恢复
 - [x] MCP 草稿：JSON Patch 和整份 manifest 都接受；低风险草稿（只改标签、来源链接、别名、简评）允许自动执行，其余需确认
 - [x] 作者不明：文件夹名保持 `_Unknown`，界面上显示为「未知」
