@@ -17,8 +17,8 @@ fn safe_matches_golden() {
 
     for (index, line) in include_str!("golden/safe.jsonl").lines().enumerate() {
         let line_number = index + 1;
-        let case: Case = serde_json::from_str(line)
-            .unwrap_or_else(|e| panic!("safe.jsonl 第 {line_number} 行：{e}"));
+        let case: Case =
+            serde_json::from_str(line).unwrap_or_else(|e| panic!("safe.jsonl 第 {line_number} 行：{e}"));
         let expected = match (case.output, case.error) {
             (Some(output), None) => Ok(output),
             (None, Some(error)) => Err(error),
@@ -39,7 +39,8 @@ fn safe_matches_golden() {
 
     assert!(total > 0, "safe.jsonl 为空");
     assert_eq!(
-        mismatches, 0,
+        mismatches,
+        0,
         "{total} 条中有 {mismatches} 条差异\n{}",
         examples.join("\n")
     );

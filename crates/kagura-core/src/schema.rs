@@ -10,14 +10,38 @@ use thiserror::Error;
 
 /// (`$id` 用的文件名, 内容)
 const SOURCES: [(&str, &str); 8] = [
-    ("common.schema.json", include_str!("../../../schemas/common.schema.json")),
-    ("model.schema.json", include_str!("../../../schemas/model.schema.json")),
-    ("stage.schema.json", include_str!("../../../schemas/stage.schema.json")),
-    ("song.schema.json", include_str!("../../../schemas/song.schema.json")),
-    ("motion_part.schema.json", include_str!("../../../schemas/motion_part.schema.json")),
-    ("project.schema.json", include_str!("../../../schemas/project.schema.json")),
-    ("game.schema.json", include_str!("../../../schemas/game.schema.json")),
-    ("aliases.schema.json", include_str!("../../../schemas/aliases.schema.json")),
+    (
+        "common.schema.json",
+        include_str!("../../../schemas/common.schema.json"),
+    ),
+    (
+        "model.schema.json",
+        include_str!("../../../schemas/model.schema.json"),
+    ),
+    (
+        "stage.schema.json",
+        include_str!("../../../schemas/stage.schema.json"),
+    ),
+    (
+        "song.schema.json",
+        include_str!("../../../schemas/song.schema.json"),
+    ),
+    (
+        "motion_part.schema.json",
+        include_str!("../../../schemas/motion_part.schema.json"),
+    ),
+    (
+        "project.schema.json",
+        include_str!("../../../schemas/project.schema.json"),
+    ),
+    (
+        "game.schema.json",
+        include_str!("../../../schemas/game.schema.json"),
+    ),
+    (
+        "aliases.schema.json",
+        include_str!("../../../schemas/aliases.schema.json"),
+    ),
 ];
 
 /// 资产 manifest 的类型（不含 project / game / aliases）。

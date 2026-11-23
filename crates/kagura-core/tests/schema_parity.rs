@@ -41,7 +41,10 @@ fn matches_python_verdicts() {
         let expect = case["valid"].as_bool().unwrap();
         let issues = s.validate_as(ty, &case["manifest"], 8).unwrap();
         let got = issues.is_empty();
-        println!("{name:32} python={expect:<5} rust={got:<5} {}", issues.first().map(|i| i.message.as_str()).unwrap_or(""));
+        println!(
+            "{name:32} python={expect:<5} rust={got:<5} {}",
+            issues.first().map(|i| i.message.as_str()).unwrap_or("")
+        );
         if got != expect {
             mismatch.push((name.to_owned(), expect, issues));
         }

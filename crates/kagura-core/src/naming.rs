@@ -15,7 +15,10 @@ pub fn utf16_len(text: &str) -> usize {
 }
 
 fn disallowed(ch: char) -> bool {
-    matches!(ch, '\0'..='\u{1f}' | '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+    matches!(
+        ch,
+        '\0'..='\u{1f}' | '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+    )
 }
 
 /// 首个点之前的名称决定整段是否为设备名，例如 `LPT3 .txt`。
@@ -140,8 +143,22 @@ mod tests {
             assert_eq!(check_rel(path), Ok(()), "{path:?}");
         }
         for path in [
-            "", ".", "..", "./x", "a/../b", "a//b", "/a", "a/", "a\\b", "C:/x", "a/\0b",
-            "sub/x.", "sub/x ", "sub/CON.txt", "ok/LPT3 .x", "COM¹.txt",
+            "",
+            ".",
+            "..",
+            "./x",
+            "a/../b",
+            "a//b",
+            "/a",
+            "a/",
+            "a\\b",
+            "C:/x",
+            "a/\0b",
+            "sub/x.",
+            "sub/x ",
+            "sub/CON.txt",
+            "ok/LPT3 .x",
+            "COM¹.txt",
         ] {
             assert!(check_rel(path).is_err(), "{path:?}");
         }

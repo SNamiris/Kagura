@@ -14,3 +14,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
 # 0.63.x 是 2026-11-23 的最新版；只用内嵌 schema，不需要远程/文件解析
 jsonschema = { version = "0.63", default-features = false }
+
+[workspace.lints]
+clippy.all = "warn"
+rust.unsafe_code = "forbid"
