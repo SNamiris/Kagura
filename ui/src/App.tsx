@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import type { CoreStatus as CoreStatusResult } from './generated/CoreStatus'
 import './App.css'
 
 const itemCount = 10_000
@@ -26,7 +27,7 @@ function CoreStatus() {
   useEffect(() => {
     if (!desktop) return
     let active = true
-    invoke<string>('core_status').then(
+    invoke<CoreStatusResult>('core_status').then(
       (text) => { if (active) setStatus({ state: 'ready', text }) },
       (error: unknown) => {
         if (active) setStatus({ state: 'error', text: `核心连接失败：${String(error)}` })

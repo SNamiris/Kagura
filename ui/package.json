@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && vite build",
     "lint": "eslint . --max-warnings=0",
+    "types:generate": "cargo --config \"env.KAGURA_EXPORT_TYPES='1'\" test -p kagura --lib core_status_typescript",
     "preview": "vite preview"
   },
   "dependencies": {
