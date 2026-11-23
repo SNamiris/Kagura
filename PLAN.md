@@ -111,7 +111,7 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 - 索引：SQLite + FTS5（日文、中文全文搜索）
 - 解析：自写 PMX/VMD 头部解析（格式公开），readme 按 cp932 → utf-8 → gbk 解码
 - 整理协作：内置 **MCP 服务**（查询、读 manifest、提交修改草稿、校验、预检、执行与撤回），由外部 agents 归类和补元数据；工具本身不调用 LLM。写操作一律走「草稿 → schema 校验 → 预检 → 用户确认 → 执行 → 日志」
-- 依赖（已验证）：Rust 1.85+（本机 1.100）、`jsonschema` 0.63（2020-12、跨文件 `$ref`、`unevaluatedProperties`、离线、format 检查均通过与 Python 版的对照）、`serde_json`（`preserve_order`）
+- workspace 声明 Rust 1.90+（本机 1.100，锁定的 Tauri 要求 1.90）。`jsonschema` 0.63 的 2020-12、跨文件 `$ref`、`unevaluatedProperties`、离线和 format 检查均通过与 Python 版的对照。`serde_json` 启用 `preserve_order`。索引使用 `rusqlite` 0.43.0（内嵌 SQLite 3.54.1，已验证 FTS5 trigram）和 `blake3` 1.8.7。
 - 参考实现：`_design\migration\plan.py`。Rust 版已逐条对照：`safe()` 7,105 个名字、8,824 条记录的目录全部一致
 
 ---
@@ -149,7 +149,7 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 | **M1 迁移计划表** | 扫描、规则 + LLM 归类、计划表；检查贴图跨目录引用、路径长度 | ✅ 完成 |
 | **M2 实际迁移** | 按 场景 → 模型 → 动作 整批迁移；全程记日志可撤回 | ✅ 完成（2026-11-23） |
 | **M2.5 迁移复核与修正** | 记录改名为 `_asset.manifest.json`、key 与文件夹对齐、作者别名表、保留目录、删除 Effects、15 组同名歌合并 / 拆分 | ✅ 完成（2026-11-24） |
-| **M3 Kagura MVP** | P0 全部：扫描、索引、浏览、筛选、详情、编辑 | 进行中：第 1～5 步 ✅，第 6～8 步待做 |
+| **M3 Kagura MVP** | P0 全部：扫描、索引、浏览、筛选、详情、编辑 | 第 1～6 步 ✅，第 7～8 步待做 |
 | **M4 解析与去重** | P1：头部解析、去重、歌曲视图、模型预览 | 1～2 周 |
 | **M5 预览与工程** | P2：动作预览、兼容提示、Projects、Blender 交接、只读 MCP | 2～4 周 |
 | **M6 扩展** | P3：MCP 写操作、Inbox + agent 归类、元数据补全、自动缩略图、UE5 | 按需 |
@@ -165,11 +165,11 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 | 3 | `manifest`：识别 Asset / ForeignManifest / RuntimeConfig / SourceJson；保留换行与 BOM 的写回 | ✅ | `b75f3f8` `4f83d7a` |
 | 4 | `layout` + `scan`：按 key 算目录、只在预期深度找记录、跳过保留目录与重解析点、歌曲索引 | ✅ | `25cff65` |
 | 5 | `check`：报告共 9 项，包括 8 项一致性检查（含 `newline_style`）和 1 项扫描错误统计（`scan`）；`check_library` 命令约 1.8 秒 | ✅ | `068bf88` `5a0a4e4` |
-| 6 | `index`：SQLite + FTS5 trigram、增量更新 | 待做 | |
+| 6 | `index`：SQLite + FTS5 trigram、增量更新、筛选与统计、按需 BLAKE3 | ✅ | `a39ae75` |
 | 7 | Tauri 界面：扫描、列表、筛选、详情、打开文件夹（先定前端框架） | 待做 | |
 | 8 | 编辑 manifest（标签、评分、简评），带校验和日志 | 待做 | |
 
-测试：28 项全部通过，含真实库对照（设 `KAGURA_LIBRARY=G:\MMD` 并加 `--include-ignored`）。
+workspace 共 40 项测试全部通过，含真实库索引、manifest 往返和目录对照（设 `KAGURA_LIBRARY=G:\MMD` 并加 `--include-ignored`）。
 
 自己检查库：`cargo run -p kagura-core --example check_library -- G:\MMD`
 

@@ -151,15 +151,34 @@ pub fn song_map(records: &[Record]) -> Result<SongMap>;   // 对应 known_songs(
 
 ### 3.7 `index`
 
-- SQLite（`rusqlite`，打开 `bundled` 特性，自带 FTS5）。
-- 表：`assets(id, type, kind, path, author, name, title, composer, rating, added, updated, mtime)`、`refs(from_id, to_id, field)`、`tags(id, tag)`、`files(asset_id, rel, size, blake3)`。
-- FTS5 表对 `name`、`name_original`、`author`、`character`、`series`、`title`、`title_alias`、`tags`、`note` 做全文索引。日文、中文用 `trigram` 分词器，不需要额外的分词库。
-- **增量更新**：按 manifest 的修改时间判断要不要重读；文件哈希按「大小 + 修改时间」缓存，变了才重算。
-- 索引文件放在 `%APPDATA%\Kagura\index.sqlite`，不写进资产库。
+`Index::default_path()` 返回 `%APPDATA%\Kagura\index.sqlite`。`Index::open(path)` 接受自定义缓存路径。已知库根时，使用 `Index::open_for_library(path, root)` 在创建数据库和目录前解析真实路径并拒绝库根内的输出。SQLite 采用 WAL。缓存的 `application_id` 为 `0x4B475241`，`user_version` 为 1。版本不符时重新建表，再通过 `update(root)` 或全量扫描填充。关闭后可删除缓存，下次从 manifest 完整重建。
+
+| 表 | 内容 |
+|---|---|
+| `assets` | `id` 主键，`rel_dir` 唯一且相对 MMD 根。列有 `type, kind, author, name, name_original, title, composer, edition, part, suffix, song_id, character, series, rating, added, updated, license_explicit, manifest_mtime, manifest_size, manifest_json`。可选字段缺省为 NULL，完整 JSON 保留键顺序。 |
+| `refs` | `from_id, to_id, field`。复用 check 对 song、related、sets、requires、derived_from、tested_with 的遍历，字段路径保留数组下标，如 `sets[0].motion[0]`。 |
+| `tags` | 主键为 `(id, tag)`，并按标签建索引。 |
+| `files` | 主键为 `(asset_id, rel)`，相对资产目录记录文件的字节数 `size`、Unix 纳秒 `mtime`、可空的十六进制 `blake3`。资产自己的 manifest 由 assets 表记录。歌曲拥有直属文件及保留目录中的文件，素材拥有各自的子树。 |
+| `assets_fts` | FTS5 `trigram`，以 rowid 对应 assets。搜索 name、name_original、author、character、series、title、title_alias、tags、note。显示名、key 中的名称和作者别名均可检索，数组用换行连接。 |
+| `meta` | 单行记录规范化的库根、上次成功扫描的 Unix 秒数、资产数及归属到资产的负载文件数。 |
+| `skipped_manifests` | 以路径为主键，缓存预期深度的外来 manifest、运行配置与普通 JSON 的 mtime 和 size。内容发生变化后重新识别。 |
+
+`rebuild(&report)` 在一个事务内重建缓存。推荐传入 `scan_library_for_check(root)` 的完整清单。`update(root)` 遍历目录项，以大小和纳秒修改时间判断哪些 manifest 需要重新读取、校验。资产的增删改和文件清单在同一事务内同步，未变文件保留哈希，失败时回滚。切换到另一个库根会重新填充缓存。
+
+`search(query, filters, limit, offset)` 返回总数、当前页及 `used_like`。三个及以上 Unicode 码点走 FTS5 字面子串搜索，一个或两个改走转义过通配符的 LIKE，空串用于浏览。LIKE 自带的大小写折叠限于 ASCII。可按类型、kind、key.author、标签、元数据缺失筛选，按名称、添加日期、更新日期或评分排序，以 ID 稳定分页。`get(id)` 返回完整 manifest，`children(song_id)` 返回歌曲的动作素材。`stats()` 按类型统计资产。作者和作曲者不明取 key 中的 `_Unknown`。授权明确表示 commercial、modify、redistribute 至少一项为布尔值，明确禁止也计入。
+
+运行以下示例可在库外重建缓存，并查看耗时、数量和大小。
+
+```powershell
+cargo run -p kagura-core --release --example build_index -- G:\MMD
+```
+
+可在库根参数后追加自定义数据库路径。真实库对照测试使用系统临时数据库。设置 `KAGURA_LIBRARY` 后运行 `cargo test -p kagura-core --release --test index_real -- --ignored --nocapture`。
 
 ### 3.8 `hash`
 
-- 新代码统一用 BLAKE3。
+- `index` 默认只读取负载文件的元数据。`hash_asset(id)` 按需流式计算 BLAKE3 并按大小和纳秒修改时间复用缓存。`hash_all(progress_cb)` 逐资产写回，每处理一个文件都报告进度（含缓存命中）。扫描重建后可以重新计算摘要。
+- 真实库测试中，额外设置 `KAGURA_INDEX_HASH_SAMPLE=1` 可试算 20 份资产。每类按 ID 取前五份负载非空且总大小不超过 64 MiB 的资产，再验证第二次全部命中缓存。
 - 迁移日志里记的是 SHA-256。要校验旧日志时，单独提供一个 SHA-256 函数，只用于这个场景。
 
 ### 3.9 `txn`（M4 以后）
