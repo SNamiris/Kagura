@@ -18,7 +18,7 @@ archive/VmdManager   旧工具的代码，仅留档
 
 ## 开发
 
-需要 Rust 1.85+（`jsonschema` 0.63 的最低版本），以及 Tauri 2 的 Windows 依赖（WebView2、MSVC 生成工具）。
+需要 Rust 1.90+（锁定的 Tauri 2 要求 1.90，`rusqlite` 要求 1.89），以及 Tauri 2 的 Windows 依赖（WebView2、MSVC 生成工具）。
 
 ```powershell
 cargo test -p kagura-core            # 核心库测试，含与 Python 版的 schema 对照

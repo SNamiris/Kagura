@@ -159,7 +159,7 @@ fn check_newline(record: &Record, report: &mut CheckReport) {
     report.add(Check::NewlineStyle, &format!("{}/{MANIFEST}", record.dir), detail);
 }
 
-fn check_references(record: &Record, mut visit: impl FnMut(&str, &str)) {
+pub(crate) fn check_references(record: &Record, mut visit: impl FnMut(&str, &str)) {
     let value = &record.value;
     for field in ["song", "derived_from"] {
         if let Some(id) = value[field].as_str() {

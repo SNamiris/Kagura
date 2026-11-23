@@ -1,6 +1,11 @@
 //! 只读扫描 Library。报告中的路径均相对传入根目录，并使用正斜杠。
 
-use std::{fs, path::Path};
+use std::{
+    collections::HashMap,
+    fs, io,
+    path::{Path, PathBuf},
+    time::UNIX_EPOCH,
+};
 
 use serde_json::Value;
 
@@ -50,6 +55,10 @@ pub struct Directory {
 
 #[derive(Debug, Default)]
 pub struct ScanReport {
+    pub root: PathBuf,
+    // File stamps come from directory entries during the same walk as the manifests.
+    pub(crate) stamps: HashMap<String, FileStamp>,
+    pub(crate) inventory_reserved: bool,
     pub records: Vec<Record>,
     /// 找到记录文件但跳过识别/纳入。
     pub skipped: Vec<Skipped>,
@@ -60,6 +69,16 @@ pub struct ScanReport {
     pub errors: Vec<ScanError>,
     pub directories: Vec<Directory>,
     pub files: Vec<String>,
+}
+
+pub(crate) type FileStamp = (i64, i64); // (mtime in Unix nanoseconds, size in bytes)
+
+pub(crate) fn mtime_ns(metadata: &fs::Metadata) -> io::Result<i64> {
+    let nanos = match metadata.modified()?.duration_since(UNIX_EPOCH) {
+        Ok(elapsed) => elapsed.as_nanos() as i128,
+        Err(before) => -(before.duration().as_nanos() as i128),
+    };
+    i64::try_from(nanos).map_err(io::Error::other)
 }
 
 impl ScanReport {
@@ -146,16 +165,25 @@ fn read_record(root: &Path, dir: &str, path: &str, schemas: &Schemas, report: &m
 
 /// 跳过重解析点和保留目录子树。
 pub fn scan_library(root: &Path) -> ScanReport {
-    scan(root, false)
+    scan(root, false, None)
 }
 
 /// 同时盘点保留目录里的文件和目录，供一致性检查使用，仍跳过其中的 manifest。
 pub fn scan_library_for_check(root: &Path) -> ScanReport {
-    scan(root, true)
+    scan(root, true, None)
 }
 
-fn scan(root: &Path, inventory_reserved: bool) -> ScanReport {
-    let mut report = ScanReport::default();
+/// Unchanged validated assets are represented by their manifest stamps only.
+pub(crate) fn scan_for_update(root: &Path, known: &HashMap<String, FileStamp>) -> ScanReport {
+    scan(root, true, Some(known))
+}
+
+fn scan(root: &Path, inventory_reserved: bool, known: Option<&HashMap<String, FileStamp>>) -> ScanReport {
+    let mut report = ScanReport {
+        root: root.to_owned(),
+        inventory_reserved,
+        ..ScanReport::default()
+    };
     let schemas = match Schemas::load() {
         Ok(schemas) => schemas,
         Err(error) => {
@@ -233,13 +261,29 @@ fn scan(root: &Path, inventory_reserved: bool) -> ScanReport {
                     pending.push((path, reserved || entering_reserved));
                 }
             } else if metadata.is_file() {
-                if !reserved && name == MANIFEST {
+                let stamp = match mtime_ns(&metadata).and_then(|mtime| {
+                    i64::try_from(metadata.len())
+                        .map(|size| (mtime, size))
+                        .map_err(io::Error::other)
+                }) {
+                    Ok(stamp) => stamp,
+                    Err(error) => {
+                        report.error(&path, error);
+                        continue;
+                    }
+                };
+                if !reserved && name == MANIFEST && known.and_then(|cache| cache.get(&path)) != Some(&stamp) {
                     read_record(root, &dir, &path, &schemas, &mut report);
                 }
-                report.files.push(path);
+                if known.is_none() {
+                    report.files.push(path.clone());
+                }
+                report.stamps.insert(path, stamp);
             }
         }
-        report.directories.push(Directory { path: dir, empty });
+        if known.is_none() {
+            report.directories.push(Directory { path: dir, empty });
+        }
     }
     report.records.sort_by(|a, b| a.dir.cmp(&b.dir));
     report.directories.sort_by(|a, b| a.path.cmp(&b.path));

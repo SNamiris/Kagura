@@ -2,6 +2,7 @@
 
 pub mod check;
 pub mod consts;
+pub mod index;
 pub mod layout;
 pub mod manifest;
 pub mod naming;

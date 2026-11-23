@@ -71,7 +71,7 @@ pub struct Schemas {
 impl Schemas {
     /// 编译全部 schema。只需在启动时做一次。
     pub fn load() -> Result<Self, SchemaError> {
-        let docs: Vec<(&str, Value)> = SOURCES
+        let docs: Vec<(&'static str, Value)> = SOURCES
             .iter()
             .map(|(name, text)| {
                 serde_json::from_str::<Value>(text)
@@ -106,7 +106,7 @@ impl Schemas {
                 .with_registry(&registry)
                 .build(doc)
                 .map_err(|e| SchemaError::Build(format!("{name}: {e}")))?;
-            validators.push((leak(ty), v));
+            validators.push((ty, v));
         }
         Ok(Self { validators })
     }
@@ -139,8 +139,4 @@ impl Schemas {
             })
             .collect())
     }
-}
-
-fn leak(s: &str) -> &'static str {
-    Box::leak(s.to_owned().into_boxed_str())
 }
