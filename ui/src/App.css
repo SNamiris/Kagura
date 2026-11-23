@@ -1,0 +1,115 @@
+#root { height: 100%; }
+
+.library {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: min(100%, 1680px);
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 64px) 16px;
+}
+
+.masthead {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #d3d7e1;
+}
+
+.brand {
+  font-family: "Baskervville", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.05em;
+  color: #382e60;
+}
+
+.core-status {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #4a5166;
+  font-size: .84rem;
+  overflow-wrap: anywhere;
+}
+
+.status-dot {
+  flex: 0 0 9px;
+  height: 9px;
+  border: 2px solid #858b9a;
+  border-radius: 50%;
+}
+.core-status[data-state="ready"] .status-dot { background: #397568; border-color: #397568; }
+.core-status[data-state="error"] { color: #9e3633; }
+.core-status[data-state="error"] .status-dot { border-color: currentColor; }
+
+.catalog { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.catalog-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: clamp(18px, 3.2vh, 40px) 0 20px;
+}
+.catalog-head h1 { margin: 0; font-size: clamp(1.7rem, 3.2vw, 2.65rem); line-height: 1.2; }
+.item-count { margin: 5px 0 0; color: #565e72; font-variant-numeric: tabular-nums; font-size: .92rem; }
+.scroll-controls { display: flex; gap: 6px; }
+.scroll-controls button {
+  cursor: pointer;
+  background: white;
+  color: #363d51;
+  border: 1px solid #c6ccd8;
+  border-radius: 5px;
+  padding: 7px 13px;
+  font: inherit;
+  font-size: .85rem;
+}
+.scroll-controls button:hover { background: #eae9f6; border-color: #8b85a6; }
+
+.viewport { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain; }
+.virtual-list { position: relative; width: 100%; }
+.virtual-row { position: absolute; display: grid; top: 0; left: 0; width: 100%; }
+.asset-card {
+  --ink: #49416c;
+  --paper: #e7e2f3;
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 15px;
+  border: 1px solid #d9dde5;
+  border-radius: 8px;
+  background: #fff;
+}
+.asset-card[data-category="stage"] { --ink: #2d5c68; --paper: #d9e9ec; }
+.asset-card[data-category="motion"] { --ink: #7a482f; --paper: #f4e5d7; }
+.asset-card[data-category="song"] { --ink: #723c60; --paper: #f3e0ec; }
+.format-tag {
+  display: grid;
+  align-items: end;
+  height: 68px;
+  padding: 9px 7px;
+  background: var(--paper);
+  color: var(--ink);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  font-family: "Arial Narrow", "Bahnschrift SemiCondensed", Arial, sans-serif;
+  font-weight: 700;
+  font-size: 1.18rem;
+  letter-spacing: -.02em;
+}
+.asset-copy { min-width: 0; display: grid; gap: 2px; }
+.asset-type { font-size: .76rem; color: var(--ink); }
+.asset-copy strong { font-size: 1.06rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.asset-id { color: #646c7d; font-size: .78rem; font-variant-numeric: tabular-nums; letter-spacing: .035em; }
+
+@media (max-width: 540px) {
+  .masthead { align-items: flex-start; flex-direction: column; gap: 7px; padding: 12px 0; }
+  .brand { font-size: 27px; }
+  .catalog-head { padding: 16px 0; gap: 8px; }
+  .scroll-controls button { padding: 7px 9px; }
+}

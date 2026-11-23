@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "identifier": "io.github.snamiris.kagura",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": "../ui/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": { "script": "npm run dev", "cwd": "../ui" },
+    "beforeBuildCommand": { "script": "npm run build", "cwd": "../ui" }
   },
   "app": {
     "windows": [

@@ -1,0 +1,13 @@
+:root {
+  font-family: "Inter", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  color: #252d40;
+  background: #f4f6fa;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; }
+:focus-visible { outline: 3px solid #62509a; outline-offset: 2px; }
