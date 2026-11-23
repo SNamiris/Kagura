@@ -1,0 +1,12 @@
+{
+  "python": "3.10.9",
+  "jsonschema": "4.25.1",
+  "counts": {
+    "model": 2036,
+    "motion_part": 3210,
+    "song": 2220,
+    "stage": 1358
+  },
+  "total": 8824,
+  "skipped": []
+}
