@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propbox.local/schemas/model.schema.json",
+  "title": "模型 _asset.manifest.json（Models/<Characters|Props>/<作者>/<模型名>/）",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/base"
+    }
+  ],
+  "properties": {
+    "format": true,
+    "schema": true,
+    "id": true,
+    "name": true,
+    "name_original": true,
+    "author": true,
+    "source": true,
+    "license": true,
+    "tags": true,
+    "rating": true,
+    "note": true,
+    "preview": true,
+    "files_hash": true,
+    "added": true,
+    "updated": true,
+    "classified_by": true,
+    "type": {
+      "const": "model"
+    },
+    "key": {
+      "type": "object",
+      "required": [
+        "author",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 40
+        }
+      }
+    },
+    "kind": {
+      "enum": [
+        "character",
+        "prop"
+      ]
+    },
+    "series": {
+      "type": "string"
+    },
+    "character": {
+      "type": "string"
+    },
+    "derived_from": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "variants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "common.schema.json#/$defs/variant"
+      },
+      "contains": {
+        "type": "object",
+        "properties": {
+          "main": {
+            "const": true
+          }
+        },
+        "required": [
+          "main"
+        ]
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "tech": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "enum": [
+            "pmx2.0",
+            "pmx2.1",
+            "pmd",
+            "x",
+            "fbx",
+            "vrm",
+            "gltf",
+            "other"
+          ]
+        },
+        "vertices": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bones": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "morphs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "standard_bones": {
+          "type": "boolean"
+        },
+        "has_physics": {
+          "type": "boolean"
+        }
+      }
+    },
+    "mod_base": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "type",
+    "kind",
+    "key",
+    "variants"
+  ],
+  "unevaluatedProperties": false
+}

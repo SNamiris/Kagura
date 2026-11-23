@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propbox.local/schemas/project.schema.json",
+  "title": "Mod 工程 project.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "type",
+    "game",
+    "name",
+    "status"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "type": {
+      "const": "project"
+    },
+    "game": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "idea",
+        "wip",
+        "released",
+        "abandoned"
+      ]
+    },
+    "base_assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "role"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "variant": {
+            "$ref": "common.schema.json#/$defs/relpath"
+          },
+          "role": {
+            "enum": [
+              "body",
+              "head",
+              "outfit",
+              "accessory",
+              "motion",
+              "other"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "published": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "version": {
+            "type": "string"
+          },
+          "date": {
+            "$ref": "common.schema.json#/$defs/date"
+          }
+        }
+      }
+    },
+    "tags": {
+      "$ref": "common.schema.json#/$defs/tags"
+    },
+    "note": {
+      "type": "string"
+    },
+    "added": {
+      "$ref": "common.schema.json#/$defs/date"
+    },
+    "updated": {
+      "$ref": "common.schema.json#/$defs/date"
+    }
+  }
+}

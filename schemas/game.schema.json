@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propbox.local/schemas/game.schema.json",
+  "title": "_game.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "type",
+    "key"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "type": {
+      "const": "game"
+    },
+    "key": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "engine": {
+      "type": "string"
+    },
+    "mod_tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "skeleton": {
+      "type": "string"
+    },
+    "note": {
+      "type": "string"
+    }
+  }
+}

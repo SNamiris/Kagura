@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propbox.local/schemas/stage.schema.json",
+  "title": "场景 _asset.manifest.json（Stages/<作者>/<场景名>/，含天空球、HDRI）",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/base"
+    }
+  ],
+  "properties": {
+    "format": true,
+    "schema": true,
+    "id": true,
+    "name": true,
+    "name_original": true,
+    "author": true,
+    "source": true,
+    "license": true,
+    "tags": true,
+    "rating": true,
+    "note": true,
+    "preview": true,
+    "files_hash": true,
+    "added": true,
+    "updated": true,
+    "classified_by": true,
+    "type": {
+      "const": "stage"
+    },
+    "key": {
+      "type": "object",
+      "required": [
+        "author",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "type": "string",
+          "default": "_Unknown"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 40
+        }
+      }
+    },
+    "kind": {
+      "enum": [
+        "stage",
+        "skydome",
+        "hdri"
+      ],
+      "description": "stage 一般场景 / skydome 天空球 PMX / hdri 环境贴图 .hdr/.exr"
+    },
+    "series": {
+      "type": "string"
+    },
+    "variants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "common.schema.json#/$defs/variant"
+      },
+      "contains": {
+        "type": "object",
+        "properties": {
+          "main": {
+            "const": true
+          }
+        },
+        "required": [
+          "main"
+        ]
+      },
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "parts": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/part"
+      },
+      "description": "多个 .x/.pmx 拼成的场景"
+    },
+    "bundled_effects": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/relpath"
+      },
+      "description": "场景自带的 MME 子目录，原样保留"
+    },
+    "scale": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "indoor": {
+      "type": "boolean"
+    },
+    "time": {
+      "enum": [
+        "day",
+        "night",
+        "dusk",
+        "any"
+      ]
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/id"
+      },
+      "description": "依赖的其他资产 id"
+    }
+  },
+  "required": [
+    "type",
+    "kind",
+    "key"
+  ],
+  "unevaluatedProperties": false,
+  "anyOf": [
+    {
+      "required": [
+        "variants"
+      ]
+    },
+    {
+      "required": [
+        "parts"
+      ]
+    }
+  ]
+}

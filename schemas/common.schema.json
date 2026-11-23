@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propbox.local/schemas/common.schema.json",
+  "title": "通用定义",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID，生成后不变"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "relpath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![/\\\\])(?!(?:[^/\\\\]+[/\\\\])*\\.\\.(?:[/\\\\]|$))[^:*?\"<>|]+$",
+      "description": "相对于资产文件夹的路径"
+    },
+    "names": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "rating": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^blake3:[0-9a-f]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "obtained": {
+          "$ref": "#/$defs/date"
+        },
+        "archive": {
+          "type": "string"
+        }
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "null=未知",
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "commercial": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "modify": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "redistribute": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "r18": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "credit_required": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "readme": {
+          "$ref": "#/$defs/relpath"
+        }
+      }
+    },
+    "base": {
+      "type": "object",
+      "required": [
+        "format",
+        "schema",
+        "id",
+        "type",
+        "key"
+      ],
+      "properties": {
+        "format": {
+          "const": "kagura-asset-manifest",
+          "description": "固定标识，永远不改；版本看 schema"
+        },
+        "schema": {
+          "const": 1
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "name_original": {
+          "type": "string"
+        },
+        "author": {
+          "$ref": "#/$defs/names"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "license": {
+          "$ref": "#/$defs/license"
+        },
+        "tags": {
+          "$ref": "#/$defs/tags"
+        },
+        "rating": {
+          "$ref": "#/$defs/rating"
+        },
+        "note": {
+          "type": "string"
+        },
+        "preview": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/relpath"
+          }
+        },
+        "files_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "added": {
+          "$ref": "#/$defs/date"
+        },
+        "updated": {
+          "$ref": "#/$defs/date"
+        },
+        "classified_by": {
+          "enum": [
+            "human",
+            "llm",
+            "scanner"
+          ]
+        }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "required": [
+        "file",
+        "label"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/relpath"
+        },
+        "label": {
+          "type": "string"
+        },
+        "main": {
+          "type": "boolean",
+          "default": false
+        },
+        "change": {
+          "enum": [
+            "original",
+            "version",
+            "color",
+            "accessory",
+            "outfit",
+            "expression",
+            "scale",
+            "physics",
+            "other"
+          ]
+        },
+        "note": {
+          "type": "string"
+        },
+        "hash": {
+          "$ref": "#/$defs/hash"
+        }
+      }
+    },
+    "part": {
+      "type": "object",
+      "required": [
+        "file"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/relpath"
+        },
+        "role": {
+          "enum": [
+            "main",
+            "floor",
+            "wall",
+            "prop",
+            "light",
+            "screen",
+            "mirror",
+            "sky",
+            "controller",
+            "other"
+          ]
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

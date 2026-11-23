@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propbox.local/schemas/song.schema.json",
+  "title": "歌 _asset.manifest.json",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/base"
+    }
+  ],
+  "properties": {
+    "format": true,
+    "schema": true,
+    "id": true,
+    "name": true,
+    "name_original": true,
+    "author": true,
+    "source": true,
+    "license": true,
+    "tags": true,
+    "rating": true,
+    "note": true,
+    "preview": true,
+    "files_hash": true,
+    "added": true,
+    "updated": true,
+    "classified_by": true,
+    "type": {
+      "const": "song"
+    },
+    "key": {
+      "type": "object",
+      "required": [
+        "title",
+        "composer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "edition": {
+          "type": "string"
+        },
+        "composer": {
+          "type": "string"
+        }
+      }
+    },
+    "title_alias": {
+      "$ref": "common.schema.json#/$defs/tags"
+    },
+    "video": {
+      "type": "string",
+      "format": "uri"
+    },
+    "related": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/id"
+      }
+    },
+    "bpm": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "audio": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "file",
+          "label"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "$ref": "common.schema.json#/$defs/relpath"
+          },
+          "label": {
+            "type": "string"
+          },
+          "main": {
+            "type": "boolean"
+          },
+          "singer": {
+            "type": "string"
+          },
+          "offset_frames": {
+            "type": "integer"
+          },
+          "hash": {
+            "$ref": "common.schema.json#/$defs/hash"
+          }
+        }
+      }
+    },
+    "sets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "label"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "motion": {
+            "type": "array",
+            "items": {
+              "$ref": "common.schema.json#/$defs/id"
+            }
+          },
+          "face": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "lip": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "camera": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "pack": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "audio": {
+            "$ref": "common.schema.json#/$defs/relpath"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "type",
+    "key"
+  ],
+  "unevaluatedProperties": false
+}

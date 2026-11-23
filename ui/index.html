@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Kagura</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    code { background: #eee; padding: 0 .3em; }
+  </style>
+</head>
+<body>
+  <h1>Kagura</h1>
+  <p id="status">检查核心库……</p>
+  <script>
+    // 占位页面：M3 第 7 步换成正式前端（框架待定）
+    const invoke = window.__TAURI__?.core?.invoke;
+    const el = document.getElementById('status');
+    if (!invoke) { el.textContent = '未在 Tauri 中运行'; }
+    else invoke('core_status').then(t => el.textContent = t).catch(e => el.textContent = '错误：' + e);
+  </script>
+</body>
+</html>

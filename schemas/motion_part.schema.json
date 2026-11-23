@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propbox.local/schemas/motion_part.schema.json",
+  "title": "动作素材 _asset.manifest.json",
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/base"
+    }
+  ],
+  "properties": {
+    "format": true,
+    "schema": true,
+    "id": true,
+    "name": true,
+    "name_original": true,
+    "author": true,
+    "source": true,
+    "license": true,
+    "tags": true,
+    "rating": true,
+    "note": true,
+    "preview": true,
+    "files_hash": true,
+    "added": true,
+    "updated": true,
+    "classified_by": true,
+    "type": {
+      "const": "motion_part"
+    },
+    "key": {
+      "type": "object",
+      "required": [
+        "part",
+        "author"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "part": {
+          "enum": [
+            "motion",
+            "face",
+            "lip",
+            "camera",
+            "pack",
+            "pose"
+          ]
+        },
+        "author": {
+          "type": "string"
+        },
+        "suffix": {
+          "type": "string"
+        }
+      }
+    },
+    "song": {
+      "oneOf": [
+        {
+          "$ref": "common.schema.json#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "file",
+          "role"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "$ref": "common.schema.json#/$defs/relpath"
+          },
+          "role": {
+            "enum": [
+              "body",
+              "face",
+              "lip",
+              "camera",
+              "light",
+              "accessory",
+              "pose"
+            ]
+          },
+          "performer": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "author": {
+            "type": "string"
+          },
+          "made_for": {
+            "type": "string"
+          },
+          "variant": {
+            "type": "string"
+          },
+          "hash": {
+            "$ref": "common.schema.json#/$defs/hash"
+          }
+        }
+      }
+    },
+    "frames": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "performers": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "required_morphs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tested_with": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/id"
+      }
+    }
+  },
+  "required": [
+    "type",
+    "key",
+    "song",
+    "files"
+  ],
+  "unevaluatedProperties": false
+}
