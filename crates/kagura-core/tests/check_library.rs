@@ -36,7 +36,61 @@ fn change_manifest(dir: &Path, change: impl FnOnce(&mut Value)) {
 fn clean_mini_library() {
     let report = check_library(&fixture());
     assert!(report.findings.is_empty(), "{:#?}", report.findings);
+    assert_eq!(report.check_counts[&Check::NewlineStyle], 0);
     assert_eq!(report.counts.values().sum::<usize>(), 5);
+}
+
+#[test]
+fn newline_findings_list_only_assets_and_leave_files_untouched() {
+    let temp = tempdir().unwrap();
+    let root = temp.path();
+    copy_tree(&fixture(), root);
+    let model = format!("Library/Models/Props/Builder/Box/{MANIFEST}");
+    let stage = format!("Library/Stages/Artist/Hall/{MANIFEST}");
+    let foreign_dir = "Library/Stages/Artist/Foreign";
+    fs::create_dir(root.join(foreign_dir)).unwrap();
+    let foreign = format!("{foreign_dir}/{MANIFEST}");
+    let reserved = format!("Library/Motions/Beat(Live)_Composer/_AuDiO/{MANIFEST}");
+    let inputs = [
+        (
+            model.as_str(),
+            fs::read_to_string(root.join(&model))
+                .unwrap()
+                .replace("\r\n", "\n")
+                .replace('\n', "\r\n"),
+        ),
+        (
+            stage.as_str(),
+            fs::read_to_string(root.join(&stage))
+                .unwrap()
+                .replace("\r\n", "\n")
+                .replacen('\n', "\r\n", 1),
+        ),
+        (
+            foreign.as_str(),
+            "{\r\n\"schema\": 1,\n\"format\": \"other\"\n}".into(),
+        ),
+        (reserved.as_str(), "{\r\n\"schema\": 1\n}".into()),
+        (".editorconfig", "[*]\nend_of_line = lf\n".into()),
+    ];
+    for (path, bytes) in &inputs {
+        fs::write(root.join(path), bytes).unwrap();
+    }
+
+    let report = check_library(root);
+    let newlines: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|f| f.check == Check::NewlineStyle)
+        .collect();
+    assert_eq!(report.check_counts[&Check::NewlineStyle], 2);
+    assert_eq!(newlines.len(), 2);
+    assert_eq!((&newlines[0].path, newlines[0].detail.as_str()), (&model, "CRLF"));
+    assert_eq!(newlines[1].path, stage);
+    assert!(newlines[1].detail.starts_with("Mixed (CRLF=1, LF="));
+    for (path, bytes) in &inputs {
+        assert_eq!(fs::read(root.join(path)).unwrap(), bytes.as_bytes(), "{path}");
+    }
 }
 
 #[test]

@@ -97,6 +97,7 @@ pub fn check_target(root: &Path, target: &RelPath, extra: &[RelPath]) -> Result<
 
 - **读取**时记录 UTF-8 BOM 和换行风格。没有换行按 LF 处理。LF 与 CRLF 混用时记录各自数量，并在扫描报告中列出文件路径。
 - **写入**时保留字段顺序，使用两个空格缩进，保留非 ASCII 字符并以换行结尾。库内 manifest 统一为 LF，新文件默认使用 LF 且不带 BOM。写回已有文件时沿用原换行和 BOM，避免只改一个字段却让整份文件显示为改动。混用时选原文件中占多数的换行，数量相同则用新文件默认值，并在写出结果中标记换行已规范化。
+- Library 根目录的 `.editorconfig` 指定编辑器将 `_asset.manifest.json` 和 `_index/*.json` 保存为 LF。手动改出 CRLF 或混合换行时，`check_library` 会在 `newline_style` 项下列出资产 manifest，可用 `normalize_newlines` 恢复 LF。
 - **存储方式**：以 `serde_json::Value` 为准，保证读写往返不丢信息；另外提供类型化的只读视图（`ModelView`、`SongView` 等）给业务逻辑用。
 - **识别规则**（按顺序）：
   1. 文件名是 `_asset.manifest.json`

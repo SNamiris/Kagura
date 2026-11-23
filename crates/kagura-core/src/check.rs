@@ -9,8 +9,9 @@ use serde::Serialize;
 use serde_json::Value;
 use unicase::UniCase;
 
-use crate::consts::PATH_LIMIT;
+use crate::consts::{MANIFEST, PATH_LIMIT};
 use crate::layout::{destination, expected_type, song_dir, SongMap};
+use crate::manifest::NewlineStyle;
 use crate::naming::utf16_len;
 use crate::scan::{is_reparse, Record, ScanReport};
 
@@ -24,6 +25,7 @@ pub enum Check {
     NoOrphanDirs,
     AuthorCase,
     PathLength,
+    NewlineStyle,
     Scan,
 }
 
@@ -35,17 +37,44 @@ pub struct Finding {
     pub detail: String,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct CheckReport {
     pub counts: BTreeMap<String, usize>,
+    pub check_counts: BTreeMap<Check, usize>,
     pub skipped: usize,
     pub pruned: usize,
     pub mixed_newlines: Vec<String>,
     pub findings: Vec<Finding>,
 }
 
+impl Default for CheckReport {
+    fn default() -> Self {
+        use Check::*;
+        let checks = [
+            IdUnique,
+            PathMatchesKey,
+            RefsResolve,
+            FilesExist,
+            NoOrphanDirs,
+            AuthorCase,
+            PathLength,
+            NewlineStyle,
+            Scan,
+        ];
+        Self {
+            counts: BTreeMap::new(),
+            check_counts: checks.map(|check| (check, 0)).into(),
+            skipped: 0,
+            pruned: 0,
+            mixed_newlines: Vec::new(),
+            findings: Vec::new(),
+        }
+    }
+}
+
 impl CheckReport {
     fn add(&mut self, check: Check, path: &str, detail: impl Into<String>) {
+        *self.check_counts.entry(check).or_default() += 1;
         self.findings.push(Finding {
             check,
             path: path.to_owned(),
@@ -96,6 +125,7 @@ pub fn check_library(root: &Path) -> CheckReport {
     }
 
     for record in &scan.records {
+        check_newline(record, &mut report);
         match destination(&record.value, &songs) {
             Ok(expected) if expected != record.dir => {
                 report.add(Check::PathMatchesKey, &record.dir, expected)
@@ -118,6 +148,15 @@ pub fn check_library(root: &Path) -> CheckReport {
     report.mixed_newlines = scan.mixed_newlines;
     report.findings.sort();
     report
+}
+
+fn check_newline(record: &Record, report: &mut CheckReport) {
+    let detail = match record.format.newline {
+        NewlineStyle::Lf => return,
+        NewlineStyle::Crlf => "CRLF".to_owned(),
+        NewlineStyle::Mixed { crlf, lf } => format!("Mixed (CRLF={crlf}, LF={lf})"),
+    };
+    report.add(Check::NewlineStyle, &format!("{}/{MANIFEST}", record.dir), detail);
 }
 
 fn check_references(record: &Record, mut visit: impl FnMut(&str, &str)) {
