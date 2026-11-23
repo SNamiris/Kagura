@@ -1,7 +1,7 @@
 # Kagura（神楽）开发计划
 
 > MMD / 3D 资产的整理、浏览与简单预览工具
-> 版本：v0.4 · 2026-11-24（定下框架与协作方式）
+> 版本：v0.5 · 2026-11-24（M3 核心库只读部分完成）
 
 ---
 
@@ -104,14 +104,15 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 └──── 读写：文件夹 + _asset.manifest.json ────┘
 ```
 
-**技术选型（建议，待定）**
+**技术选型**
 - 桌面壳：**Tauri**（Rust 后端 + Web 前端），已定。Rust 生态有 BLAKE3、SQLite、JSON Schema 校验
-- 前端：React / Vue + 虚拟列表（资产近万份）
+- 前端：框架待定（React / Vue / Svelte），需要虚拟列表（资产近万份）
 - 预览：babylon-mmd（PMX、VMD、镜头、音频），不支持 MME
 - 索引：SQLite + FTS5（日文、中文全文搜索）
 - 解析：自写 PMX/VMD 头部解析（格式公开），readme 按 cp932 → utf-8 → gbk 解码
 - 整理协作：内置 **MCP 服务**（查询、读 manifest、提交修改草稿、校验、预检、执行与撤回），由外部 agents 归类和补元数据；工具本身不调用 LLM。写操作一律走「草稿 → schema 校验 → 预检 → 用户确认 → 执行 → 日志」
-- 参考实现（用 Rust 重写时对照）：`_design\migration\plan.py` 里的 `iter_library_metadata()`、`known_songs()`、`destination()`、`safe()`、`SONG_RESERVED` / `song_asset_dirs()`
+- 依赖（已验证）：Rust 1.85+（本机 1.100）、`jsonschema` 0.63（2020-12、跨文件 `$ref`、`unevaluatedProperties`、离线、format 检查均通过与 Python 版的对照）、`serde_json`（`preserve_order`）
+- 参考实现：`_design\migration\plan.py`。Rust 版已逐条对照：`safe()` 7,105 个名字、8,824 条记录的目录全部一致
 
 ---
 
@@ -148,10 +149,31 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 | **M1 迁移计划表** | 扫描、规则 + LLM 归类、计划表；检查贴图跨目录引用、路径长度 | ✅ 完成 |
 | **M2 实际迁移** | 按 场景 → 模型 → 动作 整批迁移；全程记日志可撤回 | ✅ 完成（2026-11-23） |
 | **M2.5 迁移复核与修正** | 记录改名为 `_asset.manifest.json`、key 与文件夹对齐、作者别名表、保留目录、删除 Effects、15 组同名歌合并 / 拆分 | ✅ 完成（2026-11-24） |
-| **M3 Kagura MVP** | P0 全部：扫描、索引、浏览、筛选、详情、编辑 | 下一步，1～2 周 |
+| **M3 Kagura MVP** | P0 全部：扫描、索引、浏览、筛选、详情、编辑 | 进行中：第 1～5 步 ✅，第 6～8 步待做 |
 | **M4 解析与去重** | P1：头部解析、去重、歌曲视图、模型预览 | 1～2 周 |
 | **M5 预览与工程** | P2：动作预览、兼容提示、Projects、Blender 交接、只读 MCP | 2～4 周 |
 | **M6 扩展** | P3：MCP 写操作、Inbox + agent 归类、元数据补全、自动缩略图、UE5 | 按需 |
+
+
+### M3 进度（仓库 [SNamiris/Kagura](https://github.com/SNamiris/Kagura)）
+
+| 步骤 | 内容 | 状态 | commit |
+|---|---|---|---|
+| 0 | Cargo workspace、kagura-core、Tauri 2 骨架、内嵌 schema；rustfmt / clippy 配置 | ✅ | `3126a27` `5783ed8` `41bff92` |
+| 1 | `tools/export_golden.py` 导出标准答案（safe 7,105 条、destination 8,824 条、scan_summary） | ✅ | `ce0254b` |
+| 2 | `naming`：复刻 `safe` / `rel`，22 个边界用例 | ✅ | `d29c94f` |
+| 3 | `manifest`：识别 Asset / ForeignManifest / RuntimeConfig / SourceJson；保留换行与 BOM 的写回 | ✅ | `b75f3f8` `4f83d7a` |
+| 4 | `layout` + `scan`：按 key 算目录、只在预期深度找记录、跳过保留目录与重解析点、歌曲索引 | ✅ | `25cff65` |
+| 5 | `check`：报告共 9 项，包括 8 项一致性检查（含 `newline_style`）和 1 项扫描错误统计（`scan`）；`check_library` 命令约 1.8 秒 | ✅ | `068bf88` `5a0a4e4` |
+| 6 | `index`：SQLite + FTS5 trigram、增量更新 | 待做 | |
+| 7 | Tauri 界面：扫描、列表、筛选、详情、打开文件夹（先定前端框架） | 待做 | |
+| 8 | 编辑 manifest（标签、评分、简评），带校验和日志 | 待做 | |
+
+测试：28 项全部通过，含真实库对照（设 `KAGURA_LIBRARY=G:\MMD` 并加 `--include-ignored`）。
+
+自己检查库：`cargo run -p kagura-core --example check_library -- G:\MMD`
+
+**和 Python 版的已知差异**（均不影响现有库）：浮点 `1e-05` 写成 `0.00001`；大小写折叠用完整 Unicode casefold，与 Python 3.10 有 116 个码点不同，库内名字均未用到；扫描更严格（错误层级标为 `UnexpectedDepth`，缺 `format` 视为外来文件）。
 
 ---
 
@@ -188,12 +210,15 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 - 2026-11-22 首次扫描：约 24.4 万文件、290 GB
 - 2026-11-24 删除 `Library\Effects`（1,757 份记录，含 547 个 ray-mmd HDRI，约 42.6 GB）；记录清单在 `_design\migration_runs\effects-removal-20261124\`
 - 2026-11-24 15 组同名歌：11 组合并、Satisfaction 按 Remix 区分、bad guy / Gentleman / Say So 按剪辑长度拆分；日志在 `_design\migration_runs\song-dedup-20261124\`
+- 2026-11-24 全部 8,824 份 manifest 由 CRLF 统一转为 LF（只改换行，内容不变）；备份、日志与 `undo.py` 在 `_design\migration_runs\manifest-lf-20261124\`。`Library\.editorconfig` 规定记录文件用 LF
 
 ---
 
 ## 8. 决定记录
 
 **已决定（2026-11-24）**
+- [x] 记录文件换行：库内统一 LF；新建文件用 LF、无 BOM；写回已有文件时保留原换行和 BOM（兜底）；check 报告不是 LF 的文件，可用 `normalize_newlines` 恢复
+- [x] MCP 草稿：JSON Patch 和整份 manifest 都接受；低风险草稿（只改标签、来源链接、别名、简评）允许自动执行，其余需确认
 - [x] 作者不明：文件夹名保持 `_Unknown`，界面上显示为「未知」
 - [x] 桌面框架：**Tauri**（Rust 后端 + Web 前端）。读取、校验、命名规则用 Rust 重写，`_design\migration\plan.py` 作为参考实现与对照测试
 - [x] 暂存清理：`_Duplicates`、`migration_runs`（约 29 GB）**暂不清理**，等项目基本做完再处理
@@ -206,7 +231,8 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 
 ## 9. 相关文件
 
-- `G:\MMD\_design\schemas\`：JSON Schema（8 个）
+- 仓库 `E:\Repos\kagura`：`docs/core-design.md`（核心库设计）、`docs/mcp-design.md`（MCP 设计）、`schemas/`（以仓库为准）
+- `G:\MMD\_design\schemas\`：JSON Schema（8 个，已复制进仓库）
 - `G:\MMD\_design\prompts\classify_prompt.md`：归类规则（可改写为给 agents 的 MCP 使用说明）
 - `G:\MMD\_design\migration\`：迁移脚本（plan.py 中的读取与路径函数可复用到 Kagura）
 - `G:\MMD\_design\review_20261123.md`、`review_song_dups_20261124.md`：复核记录
