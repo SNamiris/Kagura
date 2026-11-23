@@ -1,0 +1,18 @@
+/target/
+**/target/
+node_modules/
+/ui/dist/
+*.log
+.DS_Store
+Thumbs.db
+# local index / drafts never live in the repo
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+# legacy tool: keep code, drop runtime data
+/archive/VmdManager/database/
+/archive/VmdManager/lib/backup/*.db
+/archive/VmdManager/lib/backup/*.log
+/archive/VmdManager/lib/*.log
+__pycache__/
+*.pyc
