@@ -1,0 +1,17 @@
+{
+  "format": "kagura-asset-manifest",
+  "schema": 1,
+  "id": "00000000000000000000000005",
+  "type": "motion_part",
+  "key": {
+    "part": "pose",
+    "author": "Artist"
+  },
+  "song": null,
+  "files": [
+    {
+      "file": "pose.txt",
+      "role": "pose"
+    }
+  ]
+}
