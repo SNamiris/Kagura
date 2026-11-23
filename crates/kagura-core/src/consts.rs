@@ -4,6 +4,8 @@ pub const MANIFEST: &str = "_asset.manifest.json";
 pub const MANIFEST_ALT: &str = "_asset.manifest.alt.json";
 /// manifest 里固定的格式标识，永远不改；版本看 `schema` 字段。
 pub const FORMAT: &str = "kagura-asset-manifest";
+/// 新建 manifest 的换行，也是混用换行且计数相同时的选择。
+pub const DEFAULT_MANIFEST_NEWLINE: crate::manifest::NewlineStyle = crate::manifest::NewlineStyle::Lf;
 /// 歌曲目录下的保留子目录（比较时不区分大小写）。
 pub const SONG_RESERVED: [&str; 4] = ["_audio", "_docs", "_lyrics", "_archive_attachments"];
 /// 名称、版本、后缀的 UTF-16 长度上限。

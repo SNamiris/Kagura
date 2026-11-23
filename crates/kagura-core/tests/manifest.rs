@@ -1,17 +1,19 @@
 use kagura_core::consts::{FORMAT, MANIFEST};
-use kagura_core::manifest::{dumps, metadata_role, parse, read, AssetView, MetadataRole};
+use kagura_core::manifest::{
+    dumps, encode, metadata_role, parse, parse_document, read_document, AssetView, DocumentFormat,
+    MetadataRole, NewlineStyle,
+};
 use kagura_core::schema::Schemas;
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::BTreeMap;
 use std::path::Path;
 
 #[test]
 fn runtime_configs_from_real_assets() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     for fixture in ["runtime_character.json", "runtime_stage.json"] {
-        let value = read(&dir.join(fixture)).unwrap();
-        assert_eq!(metadata_role(&value), MetadataRole::RuntimeConfig);
+        let document = read_document(&dir.join(fixture)).unwrap();
+        assert_eq!(metadata_role(&document.value), MetadataRole::RuntimeConfig);
     }
 }
 
@@ -76,6 +78,73 @@ struct GoldenRecord {
 }
 
 #[test]
+fn preserves_crlf_lf_and_escaped_line_breaks() {
+    let lf = "{\n  \"name\": \"a\\r\\nb\\nc\"\n}\n";
+    let crlf = lf.replace('\n', "\r\n");
+    for (text, style) in [(lf, NewlineStyle::Lf), (crlf.as_str(), NewlineStyle::Crlf)] {
+        let document = parse_document(text.as_bytes()).unwrap();
+        assert_eq!(document.format.newline, style);
+        assert!(!document.format.bom);
+        let encoded = encode(&document.value, document.format).unwrap();
+        assert_eq!(encoded.bytes, text.as_bytes());
+        assert!(!encoded.normalized_newlines);
+    }
+}
+
+#[test]
+fn no_line_breaks_and_new_files_use_lf() {
+    let document = parse_document(b"{}").unwrap();
+    assert_eq!(document.format.newline, NewlineStyle::Lf);
+    let encoded = encode(&document.value, document.format).unwrap();
+    assert_eq!(encoded.bytes, b"{}\n");
+    assert!(!encoded.normalized_newlines);
+
+    let encoded = encode(&document.value, DocumentFormat::default()).unwrap();
+    assert_eq!(encoded.bytes, b"{}\n");
+    assert!(!encoded.normalized_newlines);
+}
+
+#[test]
+fn retains_bom_after_edit() {
+    let original = b"\xef\xbb\xbf{\r\n  \"x\": 1\r\n}\r\n";
+    let mut document = parse_document(original).unwrap();
+    assert!(document.format.bom);
+    let encoded = encode(&document.value, document.format).unwrap();
+    assert_eq!(encoded.bytes, original);
+    assert!(!encoded.normalized_newlines);
+
+    document.value["x"] = json!(2);
+    let encoded = encode(&document.value, document.format).unwrap();
+    assert_eq!(encoded.bytes, b"\xef\xbb\xbf{\r\n  \"x\": 2\r\n}\r\n");
+}
+
+#[test]
+fn mixed_line_breaks_use_majority_and_default_on_ties() {
+    let lf = b"{\n  \"x\": 1\n}\n".as_slice();
+    let crlf = b"{\r\n  \"x\": 1\r\n}\r\n".as_slice();
+    for (raw, lf_count, crlf_count, expected) in [
+        ("{\r\n  \"x\": 1\n}\n", 2, 1, lf),
+        ("{\n  \"x\": 1\r\n}\r\n", 1, 2, crlf),
+        ("{\n  \"x\": 1\r\n}", 1, 1, lf),
+    ] {
+        let document = parse_document(raw.as_bytes()).unwrap();
+        assert_eq!(
+            document.format.newline,
+            NewlineStyle::Mixed {
+                lf: lf_count,
+                crlf: crlf_count
+            }
+        );
+        let encoded = encode(&document.value, document.format).unwrap();
+        assert_eq!(encoded.bytes, expected);
+        assert!(encoded.normalized_newlines);
+        let reread = parse_document(&encoded.bytes).unwrap();
+        assert_eq!(reread.value, document.value);
+        assert!(!encode(&reread.value, reread.format).unwrap().normalized_newlines);
+    }
+}
+
+#[test]
 #[ignore = "需要设置 KAGURA_LIBRARY 为包含 Library 的真实库根目录"]
 fn real_library_manifest_roundtrip() {
     let root = std::env::var_os("KAGURA_LIBRARY").expect("请设置 KAGURA_LIBRARY");
@@ -83,56 +152,41 @@ fn real_library_manifest_roundtrip() {
     let schemas = Schemas::load().unwrap();
     let mut exact = 0;
     let mut total = 0;
-    let mut differences = BTreeMap::new();
+    let (mut crlf, mut lf, mut mixed, mut bom) = (0, 0, 0, 0);
     let mut examples = Vec::new();
     for row in include_str!("golden/destination.jsonl").lines() {
         let record: GoldenRecord = serde_json::from_str(row).unwrap();
         let relative = format!("{}/{MANIFEST}", record.dir);
         let raw = std::fs::read(root.join(&relative)).unwrap_or_else(|e| panic!("{relative}: {e}"));
-        let value = parse(&raw).unwrap_or_else(|e| panic!("{relative}: {e}"));
-        assert_eq!(metadata_role(&value), MetadataRole::Asset, "{relative}");
-        let issues = schemas.validate_asset(&value, 8).unwrap();
+        let document = parse_document(&raw).unwrap_or_else(|e| panic!("{relative}: {e}"));
+        assert_eq!(metadata_role(&document.value), MetadataRole::Asset, "{relative}");
+        let issues = schemas.validate_asset(&document.value, 8).unwrap();
         assert!(issues.is_empty(), "{relative}: {issues:?}");
-        let view = AssetView::new(&value).unwrap();
+        let view = AssetView::new(&document.value).unwrap();
         assert_eq!(
             (view.id, view.ty),
             (record.id.as_str(), record.ty.as_str()),
             "{relative}"
         );
 
-        let written = dumps(&value).unwrap();
+        match document.format.newline {
+            NewlineStyle::Crlf => crlf += 1,
+            NewlineStyle::Lf => lf += 1,
+            NewlineStyle::Mixed { .. } => mixed += 1,
+        }
+        if document.format.bom {
+            bom += 1;
+        }
+        let written = encode(&document.value, document.format).unwrap();
         total += 1;
-        if raw == written.as_bytes() {
+        if raw == written.bytes {
             exact += 1;
-        } else {
-            let original = std::str::from_utf8(&raw).unwrap();
-            let no_bom = original.trim_start_matches('\u{feff}');
-            let lf = no_bom.replace("\r\n", "\n");
-            let mut reasons = Vec::new();
-            if original.len() != no_bom.len() {
-                reasons.push("BOM");
-            }
-            if no_bom.len() != lf.len() {
-                reasons.push("CRLF");
-            }
-            if lf != written {
-                if lf.trim_end_matches('\n') == written.trim_end_matches('\n') {
-                    reasons.push("terminal newline");
-                } else {
-                    reasons.push("JSON spelling/format");
-                }
-            }
-            let reason = reasons.join(" + ");
-            *differences.entry(reason.clone()).or_insert(0usize) += 1;
-            if examples.len() < 10 {
-                examples.push((relative, reason));
-            }
-            assert_eq!(parse(written.as_bytes()).unwrap(), value, "写出改变了 JSON 值");
+        } else if examples.len() < 10 {
+            examples.push((relative, document.format));
         }
     }
-    assert!(total > 0);
-    println!("manifest total={total}, byte_exact={exact}, differences={differences:?}");
-    for (path, reason) in examples {
-        println!("{reason}: {path}");
-    }
+    println!("manifest total={total}, byte_exact={exact}, CRLF={crlf}, LF={lf}, Mixed={mixed}, BOM={bom}, no_BOM={}", total - bom);
+    assert_eq!(total, 8824);
+    assert_eq!(exact, total, "前 10 个字节不一致的文件：{examples:?}");
+    assert_eq!(lf, total, "迁移后的真实库应全部使用 LF");
 }

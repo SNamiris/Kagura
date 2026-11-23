@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::{
     consts::MANIFEST,
     layout::{self, LayoutError, SongMap},
-    manifest::{self, MetadataRole},
+    manifest::{self, DocumentFormat, MetadataRole, NewlineStyle},
     schema::Schemas,
 };
 
@@ -15,6 +15,8 @@ use crate::{
 pub struct Record {
     pub dir: String,
     pub value: Value,
+    /// 原始 manifest 的换行和 BOM，修改记录后写回时使用。
+    pub format: DocumentFormat,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -53,6 +55,8 @@ pub struct ScanReport {
     pub skipped: Vec<Skipped>,
     /// Python 参考扫描在枚举阶段剪枝的目录和重解析点。
     pub pruned: Vec<Skipped>,
+    /// 扫描已读取的 manifest 中，混用 CRLF 与 LF 的相对路径。
+    pub mixed_newlines: Vec<String>,
     pub errors: Vec<ScanError>,
     pub directories: Vec<Directory>,
     pub files: Vec<String>,
@@ -86,7 +90,18 @@ fn read_record(root: &Path, dir: &str, path: &str, schemas: &Schemas, report: &m
         });
         return;
     };
-    let value = match manifest::read(&root.join(path)) {
+    let bytes = match fs::read(root.join(path)) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            report.error(path, error);
+            return;
+        }
+    };
+    let format = DocumentFormat::detect(&bytes);
+    if matches!(format.newline, NewlineStyle::Mixed { .. }) {
+        report.mixed_newlines.push(path.into());
+    }
+    let value = match manifest::parse(&bytes) {
         Ok(value) => value,
         Err(error) => {
             report.error(path, error);
@@ -124,6 +139,7 @@ fn read_record(root: &Path, dir: &str, path: &str, schemas: &Schemas, report: &m
         Ok(_) => report.records.push(Record {
             dir: dir.into(),
             value,
+            format,
         }),
     }
 }
@@ -231,6 +247,7 @@ fn scan(root: &Path, inventory_reserved: bool) -> ScanReport {
     report.errors.sort_by(|a, b| a.path.cmp(&b.path));
     report.pruned.sort_by(|a, b| a.path.cmp(&b.path));
     report.skipped.sort_by(|a, b| a.path.cmp(&b.path));
+    report.mixed_newlines.sort();
     report
 }
 

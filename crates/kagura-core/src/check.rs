@@ -40,6 +40,7 @@ pub struct CheckReport {
     pub counts: BTreeMap<String, usize>,
     pub skipped: usize,
     pub pruned: usize,
+    pub mixed_newlines: Vec<String>,
     pub findings: Vec<Finding>,
 }
 
@@ -114,6 +115,7 @@ pub fn check_library(root: &Path) -> CheckReport {
         check_files(&root, record, &mut report);
     }
     check_directories(&root, &scan, &mut report);
+    report.mixed_newlines = scan.mixed_newlines;
     report.findings.sort();
     report
 }

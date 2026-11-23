@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use kagura_core::consts::MANIFEST;
 use kagura_core::layout::{destination, LayoutError};
+use kagura_core::manifest::NewlineStyle;
 use kagura_core::scan::{scan_library, scan_library_for_check, song_map, SkipReason};
 use serde_json::{json, Value};
 
@@ -89,6 +90,47 @@ fn skipped_foreign_and_errors_remain_visible() {
     ] {
         assert!(report.skipped.iter().any(|s| s.reason == reason));
     }
+}
+
+#[test]
+fn mixed_newlines_are_reported_before_validation() {
+    let root = tempfile::tempdir().unwrap();
+    let base = root.path().join("Library/Stages/Artist");
+    let stage = include_str!("fixtures/mini_library/Library/Stages/Artist/Hall/_asset.manifest.json");
+    let lf = stage.replace("\r\n", "\n");
+    let mixed = format!("\u{feff}{}", lf.replacen('\n', "\r\n", 1));
+    for (dir, raw) in [
+        ("Hall", mixed.as_str()),
+        ("Foreign", "{\r\n\"schema\": 1\n}"),
+        ("Broken", "[\r\n!\n]"),
+        ("Other", "{}\r\n"),
+        ("Other/deeper", "[\r\n!\n]"),
+    ] {
+        let dir = base.join(dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(MANIFEST), raw).unwrap();
+    }
+
+    let report = scan_library(root.path());
+    let expected =
+        ["Broken", "Foreign", "Hall"].map(|name| format!("Library/Stages/Artist/{name}/{MANIFEST}"));
+    assert_eq!(report.mixed_newlines, expected);
+    assert_eq!(report.records.len(), 1);
+    let format = report.records[0].format;
+    assert!(format.bom);
+    assert_eq!(
+        format.newline,
+        NewlineStyle::Mixed {
+            lf: lf.matches('\n').count() - 1,
+            crlf: 1
+        }
+    );
+    assert_eq!(report.errors.len(), 1);
+    assert_eq!(report.skipped.len(), 3);
+    assert_eq!(
+        kagura_core::check::check_library(root.path()).mixed_newlines,
+        expected
+    );
 }
 
 #[cfg(any(windows, unix))]
