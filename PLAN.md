@@ -149,7 +149,7 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 | **M1 迁移计划表** | 扫描、规则 + LLM 归类、计划表；检查贴图跨目录引用、路径长度 | ✅ 完成 |
 | **M2 实际迁移** | 按 场景 → 模型 → 动作 整批迁移；全程记日志可撤回 | ✅ 完成（2026-11-23） |
 | **M2.5 迁移复核与修正** | 记录改名为 `_asset.manifest.json`、key 与文件夹对齐、作者别名表、保留目录、删除 Effects、15 组同名歌合并 / 拆分 | ✅ 完成（2026-11-24） |
-| **M3 Kagura MVP** | P0 全部：扫描、索引、浏览、筛选、详情、编辑 | 第 1～6 步 ✅，第 7～8 步待做 |
+| **M3 Kagura MVP** | P0 全部：扫描、索引、浏览、筛选、详情、编辑 | 第 1～7 步 ✅，第 8 步待做 |
 | **M4 解析与去重** | P1：头部解析、去重、歌曲视图、模型预览 | 1～2 周 |
 | **M5 预览与工程** | P2：动作预览、兼容提示、Projects、Blender 交接、只读 MCP | 2～4 周 |
 | **M6 扩展** | P3：MCP 写操作、Inbox + agent 归类、元数据补全、自动缩略图、UE5 | 按需 |
@@ -166,10 +166,10 @@ effect 类型已于 2026-11-24 停用，schema 已删除。
 | 4 | `layout` + `scan`：按 key 算目录、只在预期深度找记录、跳过保留目录与重解析点、歌曲索引 | ✅ | `25cff65` |
 | 5 | `check`：报告共 9 项，包括 8 项一致性检查（含 `newline_style`）和 1 项扫描错误统计（`scan`）；`check_library` 命令约 1.8 秒 | ✅ | `068bf88` `5a0a4e4` |
 | 6 | `index`：SQLite + FTS5 trigram、增量更新、筛选与统计、按需 BLAKE3 | ✅ | `a39ae75` |
-| 7 | Tauri 界面：扫描、列表、筛选、详情、打开文件夹（先定前端框架） | 待做 | |
+| 7 | [Tauri 界面](docs/ui.md)：真实库扫描、虚拟网格与列表、筛选、详情与引用跳转、打开目录、库检查 | ✅ | `3fd73f3` |
 | 8 | 编辑 manifest（标签、评分、简评），带校验和日志 | 待做 | |
 
-workspace 共 40 项测试全部通过，含真实库索引、manifest 往返和目录对照（设 `KAGURA_LIBRARY=G:\MMD` 并加 `--include-ignored`）。
+workspace 共 44 项测试全部通过，含 Tauri 命令、真实库索引、manifest 往返和目录对照（设 `KAGURA_LIBRARY=G:\MMD` 并加 `--include-ignored`）。
 
 自己检查库：`cargo run -p kagura-core --example check_library -- G:\MMD`
 
