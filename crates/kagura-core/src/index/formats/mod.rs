@@ -87,10 +87,10 @@ fn failure(row: &Row<'_>) -> rusqlite::Result<Option<CachedParseError>> {
 
 pub(super) fn models(db: &Connection, id: &str) -> Result<Vec<ModelFileInfo>, IndexError> {
     let mut statement = db.prepare_cached(
-        "SELECT m.*,
+        "SELECT m.*, CASE WHEN a.type='model' AND a.kind='character' THEN m.standard_bones END AS character_bones,
          (SELECT count(*) FROM model_textures t WHERE t.info_id=m.info_id) AS textures,
          (SELECT count(*) FROM model_textures t WHERE t.info_id=m.info_id AND t.present=0) AS missing_textures
-         FROM model_info m WHERE m.asset_id=? ORDER BY m.file",
+         FROM model_info m JOIN assets a ON a.id=m.asset_id WHERE m.asset_id=? ORDER BY m.file",
     )?;
     let rows = statement.query_map([id], |r| {
         let parse_error = failure(r)?;
@@ -110,7 +110,7 @@ pub(super) fn models(db: &Connection, id: &str) -> Result<Vec<ModelFileInfo>, In
             morphs: r.get("morphs")?,
             rigid_bodies: r.get("rigid_bodies")?,
             joints: r.get("joints")?,
-            standard_bones: r.get("standard_bones")?,
+            standard_bones: r.get("character_bones")?,
             has_physics: r.get("has_physics")?,
             textures: if parse_error.is_none() {
                 r.get("textures")?

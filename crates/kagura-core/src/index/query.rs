@@ -228,7 +228,7 @@ impl Index {
             predicates.push("EXISTS(SELECT 1 FROM model_info m JOIN model_variants v ON v.asset_id=m.asset_id AND v.file_key=m.file_key WHERE m.asset_id=a.id AND EXISTS(SELECT 1 FROM model_textures t WHERE t.info_id=m.info_id AND t.present=0))".into());
         }
         if filters.nonstandard_bones {
-            predicates.push("EXISTS(SELECT 1 FROM model_info m JOIN model_variants v ON v.asset_id=m.asset_id AND v.file_key=m.file_key WHERE m.asset_id=a.id AND m.standard_bones=0)".into());
+            predicates.push("a.type='model' AND a.kind='character' AND EXISTS(SELECT 1 FROM model_info m JOIN model_variants v ON v.asset_id=m.asset_id AND v.file_key=m.file_key WHERE m.asset_id=a.id AND m.standard_bones=0)".into());
         }
         if !predicates.is_empty() {
             from.push_str(" WHERE ");

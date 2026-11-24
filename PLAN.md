@@ -229,6 +229,8 @@ M3 收尾时 workspace 共 52 项测试全部通过，覆盖 Tauri 命令、编�
 ## 8. 决定记录
 
 **已决定（2026-11-24）**
+- [x] 解析结果只保存在可重建的索引缓存中。以后确有需要时，由显式批量命令把选定结果写回 manifest 的 `tech`。
+- [x] 标准骨骼只用于角色模型（`model.kind=character`）的详情与筛选，道具保留骨骼名称和数量。
 - [x] 前端采用 React + TypeScript + Vite；资产浏览的虚拟列表和网格使用 TanStack Virtual。
 - [x] 记录文件换行：库内统一 LF；新建文件用 LF、无 BOM；写回已有文件时保留原换行和 BOM（兜底）；check 报告不是 LF 的文件，可用 `normalize_newlines` 恢复
 - [x] MCP 草稿：JSON Patch 和整份 manifest 都接受；低风险草稿（只改标签、来源链接、别名、简评）允许自动执行，其余需确认

@@ -41,7 +41,7 @@ export function Sidebar({ filters, stats, onChange, choose, busy }: {
         <label className="check-label"><input type="checkbox" checked={filters.missing_textures}
           onChange={e => onChange({ ...filters, missing_textures: e.target.checked })}/>缺失贴图</label>
         <label className="check-label"><input type="checkbox" checked={filters.nonstandard_bones}
-          onChange={e => onChange({ ...filters, nonstandard_bones: e.target.checked })}/>非标准骨骼</label>
+          onChange={e => onChange({ ...filters, nonstandard_bones: e.target.checked })}/>非标准骨骼（角色）</label>
       </fieldset>
     </div>
     <button className="switch-root" onClick={choose} disabled={busy}><FolderOpen size={16} />切换库文件夹</button>

@@ -94,9 +94,10 @@ fn cache_tracks_variant_textures_file_stamps_errors_and_deletions() {
     assert_eq!((initial.total, initial.processed, initial.failed), (4, 4, 1));
     let warm = index.parse_files(&root, |_| true).unwrap();
     assert_eq!((warm.cached, warm.processed), (4, 0));
-    assert_eq!(totals(&index), (1, 1));
+    assert_eq!(totals(&index), (1, 0));
     let detail = index.asset_detail(&root, ID).unwrap().unwrap();
     assert_eq!(detail.model_info.len(), 3);
+    assert!(detail.model_info.iter().all(|file| file.standard_bones.is_none()));
     let model = detail
         .model_info
         .iter()
@@ -126,7 +127,7 @@ fn cache_tracks_variant_textures_file_stamps_errors_and_deletions() {
     fs::write(dir.join("shared.png"), "texture now available").unwrap();
     index.update(&root).unwrap();
     assert_eq!(index.parse_files(&root, |_| true).unwrap().processed, 0);
-    assert_eq!(totals(&index), (0, 1)); // undeclared extra.pmd also lacks a texture
+    assert_eq!(totals(&index), (0, 0)); // undeclared extra.pmd also lacks a texture
     fs::remove_file(dir.join("shared.png")).unwrap();
     fs::write(&vmd, [motion(150), vec![0; 4]].concat()).unwrap();
     fs::remove_file(dir.join("broken.PMX")).unwrap();
@@ -136,7 +137,7 @@ fn cache_tracks_variant_textures_file_stamps_errors_and_deletions() {
     let detail = index.asset_detail(&root, ID).unwrap().unwrap();
     assert_eq!(detail.motion_info[0].max_frame, Some(150));
     assert_eq!(detail.model_info.len(), 2);
-    assert_eq!(totals(&index), (1, 1));
+    assert_eq!(totals(&index), (1, 0));
     assert_eq!(fs::read(dir.join(MANIFEST)).unwrap(), manifest);
 }
 
@@ -199,15 +200,40 @@ fn shared_and_escaping_texture_paths_respect_library_boundary_and_filesystem_cas
     assert_eq!(files[0].file, "escape.pmd");
     assert_eq!(files[0].missing_textures, Some(1));
     assert_eq!(files[1].missing_textures, Some(0));
-    assert_eq!(totals(&index), (0, 1));
+    assert_eq!(totals(&index), (0, 0));
     // The cross-directory texture belongs to no asset in files. Inventory must still notice
     // its disappearance and restoration; neither pass needs to reread the model bytes.
     fs::remove_file(&actual).unwrap();
     index.update(&root).unwrap();
     assert_eq!(index.parse_files(&root, |_| true).unwrap().processed, 0);
-    assert_eq!(totals(&index), (1, 1));
+    assert_eq!(totals(&index), (1, 0));
     fs::write(actual, "").unwrap();
     index.update(&root).unwrap();
     assert_eq!(index.parse_files(&root, |_| true).unwrap().processed, 0);
-    assert_eq!(totals(&index), (0, 1));
+    assert_eq!(totals(&index), (0, 0));
+}
+
+#[test]
+fn missing_bones_applies_to_declared_character_variants() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("mmd");
+    let prop = fixture(&root, "main.pmd");
+    fs::write(prop.join("main.pmd"), pmd("absent.png")).unwrap();
+    let character = root.join("Library/Models/Characters/Builder/Figure");
+    fs::create_dir_all(&character).unwrap();
+    let mut doc: Value = serde_json::from_slice(&fs::read(prop.join(MANIFEST)).unwrap()).unwrap();
+    doc["id"] = json!("00000000000000000000000002");
+    doc["kind"] = json!("character");
+    doc["key"]["name"] = json!("Figure");
+    fs::write(character.join(MANIFEST), serde_json::to_vec(&doc).unwrap()).unwrap();
+    fs::copy(prop.join("main.pmd"), character.join("main.pmd")).unwrap();
+    let mut index = Index::open_for_library(temp.path().join("cache.sqlite"), &root).unwrap();
+    index.update(&root).unwrap();
+    index.parse_files(&root, |_| true).unwrap();
+    assert_eq!(totals(&index), (2, 1));
+    let detail = index
+        .asset_detail(&root, doc["id"].as_str().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(detail.model_info[0].standard_bones, Some(false));
 }

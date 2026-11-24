@@ -89,7 +89,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let condition = if missing {
             "EXISTS(SELECT 1 FROM model_textures t WHERE t.info_id=m.info_id AND t.present=0)"
         } else {
-            "standard_bones=0"
+            "a.kind='character' AND standard_bones=0"
         };
         let sql = format!(
             "SELECT count(DISTINCT m.asset_id) FROM model_info m JOIN assets a ON a.id=m.asset_id

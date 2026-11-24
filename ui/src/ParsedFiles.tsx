@@ -24,7 +24,7 @@ function ModelReadout({ info }: { info: ModelFileInfo }) {
       <Metric label="表情">{count(info.morphs)}</Metric>
     </dl>
     <dl className="parse-properties">
-      <Metric label="标准骨骼">{info.standard_bones === null ? '—' : info.standard_bones ? '齐全' : '不齐全'}</Metric>
+      {info.standard_bones !== null && <Metric label="标准骨骼">{info.standard_bones ? '齐全' : '不齐全'}</Metric>}
       <Metric label="物理">{info.has_physics === null ? '—' : info.has_physics ? '有' : '无'}</Metric>
       <Metric label="贴图">{count(info.textures)}</Metric>
       <Metric label="缺失贴图" warning={!!info.missing_textures}>{count(info.missing_textures)}</Metric>
