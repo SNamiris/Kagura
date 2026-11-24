@@ -1,6 +1,7 @@
 //! Rebuildable SQLite search cache. Source library files are only ever opened for reading.
 
 mod detail;
+mod formats;
 mod hash;
 mod paths;
 mod query;
@@ -16,10 +17,11 @@ use thiserror::Error;
 
 use crate::scan::ScanReport;
 pub use detail::{AssetDetail, AssetRef, LibraryMeta};
+pub use formats::{CachedParseError, ModelFileInfo, MotionFileInfo, ParseProgress};
 pub use hash::{HashProgress, HashReport};
 pub use query::{AssetSummary, IndexStats, Missing, SearchFilters, SearchPage, Sort};
 
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 const APPLICATION_ID: i32 = 0x4b475241; // KGRA
 
 #[derive(Debug, Error)]

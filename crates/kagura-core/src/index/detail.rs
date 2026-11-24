@@ -53,9 +53,11 @@ pub struct AssetDetail {
     pub incoming: Vec<AssetRef>,
     /// Paths relative to the song directory, including files not described in manifest.audio.
     pub audio_files: Vec<String>,
+    pub model_info: Vec<super::ModelFileInfo>,
+    pub motion_info: Vec<super::MotionFileInfo>,
 }
 
-fn active_root(conn: &Connection, root: &Path) -> Result<PathBuf, IndexError> {
+pub(super) fn active_root(conn: &Connection, root: &Path) -> Result<PathBuf, IndexError> {
     let root = root.canonicalize()?;
     let indexed: Option<String> = conn
         .query_row("SELECT root FROM meta WHERE id=1", [], |row| row.get(0))
@@ -315,6 +317,8 @@ impl Index {
             incoming: references(&tx, id, true)?,
             outgoing: references(&tx, id, false)?,
             audio_files,
+            model_info: super::formats::models(&tx, id)?,
+            motion_info: super::formats::motions(&tx, id)?,
         };
         tx.commit()?;
         Ok(Some(detail))

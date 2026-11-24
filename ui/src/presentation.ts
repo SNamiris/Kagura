@@ -29,7 +29,9 @@ export function size(bytes: number) {
   return `${(bytes / 1024 ** unit).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} ${['B', 'KiB', 'MiB', 'GiB', 'TiB'][unit]}`
 }
 
-export const emptyFilters: UiFilters = { types: [], kinds: [], author: null, tag: null, missing: [] }
+export const emptyFilters: UiFilters = {
+  types: [], kinds: [], author: null, tag: null, missing: [], missing_textures: false, nonstandard_bones: false,
+}
 export const defaultSort: SortSpec = { field: 'name', descending: false }
 export function toggle<T>(values: T[], value: T) {
   return values.includes(value) ? values.filter(v => v !== value) : [...values, value]

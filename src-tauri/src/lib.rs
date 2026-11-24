@@ -1,5 +1,6 @@
 mod commands;
 mod desktop;
+mod parse_jobs;
 
 use std::sync::Mutex;
 
@@ -13,6 +14,7 @@ fn handlers<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Sen
         commands::choose_library,
         commands::open_library,
         commands::rescan,
+        commands::parse_status,
         commands::search,
         commands::get_asset,
         commands::song_children,

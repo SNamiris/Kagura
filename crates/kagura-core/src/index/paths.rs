@@ -25,7 +25,7 @@ pub(super) fn checked_entry(
     dir: &str,
     file: Option<&str>,
 ) -> Result<(PathBuf, Metadata), IndexError> {
-    if !dir.starts_with("Library/") || file == Some("") {
+    if (dir != "Library" && !dir.starts_with("Library/")) || file == Some("") {
         return Err(IndexError::Invalid(format!("无效的索引路径：{dir} {file:?}")));
     }
     let mut path = root.to_owned();

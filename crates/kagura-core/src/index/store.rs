@@ -214,6 +214,22 @@ fn synchronize(
         write_asset(tx, record, id, *stamp)?;
     }
     write_files(tx, stamps, &owners, &mut changes)?;
+    // Textures may be shared with an unowned sibling directory. Include scanned regular files
+    // outside the assets table when deciding whether cached texture existence needs a new check.
+    let mut paths: Vec<_> = stamps.keys().collect();
+    paths.sort_unstable();
+    let mut digest = blake3::Hasher::new();
+    for path in paths {
+        digest.update(path.as_bytes()).update(&[0]);
+    }
+    tx.execute(
+        "UPDATE parse_state SET inventory_revision=inventory_revision+1,path_digest=?1
+         WHERE path_digest!=?1 OR ?2",
+        params![
+            digest.finalize().to_hex().as_str(),
+            changes.files_changed != 0 || changes.files_deleted != 0
+        ],
+    )?;
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| IndexError::Invalid(e.to_string()))?;
@@ -242,6 +258,8 @@ pub(super) fn clear_asset_metadata(tx: &Transaction<'_>, id: &str) -> Result<()>
     tx.prepare_cached("DELETE FROM refs WHERE from_id=?")?
         .execute([id])?;
     tx.prepare_cached("DELETE FROM tags WHERE id=?")?.execute([id])?;
+    tx.prepare_cached("DELETE FROM model_variants WHERE asset_id=?")?
+        .execute([id])?;
     Ok(())
 }
 
@@ -276,6 +294,18 @@ pub(super) fn write_asset(tx: &Transaction<'_>, record: &Record, id: &str, stamp
         serde_json::to_string(v)?,
     ], |row| row.get(0))?;
     let tags = strings(&v["tags"]).collect::<Vec<_>>();
+    if v["type"] == "model" {
+        let mut insert =
+            tx.prepare_cached("INSERT OR IGNORE INTO model_variants(asset_id,file_key) VALUES(?,?)")?;
+        for file in v["variants"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|variant| variant["file"].as_str())
+        {
+            insert.execute(params![id, super::formats::file_key(file)])?;
+        }
+    }
     let names = name
         .into_iter()
         .chain(key["name"].as_str().filter(|&other| Some(other) != name))

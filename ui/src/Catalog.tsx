@@ -32,9 +32,9 @@ const AssetCard = memo(function AssetCard({ asset, selected, open }: { asset: As
   </button>
 })
 
-export function Catalog({ query, filters, sort, setSort, selected, open, view, setView }: {
+export function Catalog({ query, filters, sort, setSort, selected, open, view, setView, parsingMatches }: {
   query: string, filters: UiFilters, sort: SortSpec, setSort: (s: SortSpec) => void,
-  selected: string | null, open: (id: string) => void, view: 'grid' | 'list', setView: (v: 'grid' | 'list') => void
+  selected: string | null, open: (id: string) => void, view: 'grid' | 'list', setView: (v: 'grid' | 'list') => void, parsingMatches: boolean,
 }) {
   const viewport = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(640)
@@ -112,9 +112,11 @@ export function Catalog({ query, filters, sort, setSort, selected, open, view, s
       </div></div>
     {error && <div className="error-box" role="alert">{error}<button onClick={() => { setError(''); setAttempt(a => a + 1) }}>重试</button></div>}
     {pages[0]?.used_like && <p className="search-note">短词匹配 · LIKE</p>}
+    {parsingMatches && <p className="search-note">后台正在解析文件，筛选结果将在完成后刷新。</p>}
     <div className={'viewport ' + view} ref={viewport} aria-label="资产结果视口" data-testid="asset-viewport" role="region" tabIndex={0}
       aria-busy={loading} data-loaded-pages={Object.keys(pages).length}>
-      {pages[0] && !total && <div className="empty-results"><SearchX size={28}/><h3>没有找到资产</h3><p>试试其他关键词，或清除筛选条件。</p></div>}
+      {pages[0] && !total && <div className="empty-results"><SearchX size={28}/><h3>{parsingMatches ? '已解析的文件中暂无匹配项' : '没有找到资产'}</h3>
+        {!parsingMatches && <p>试试其他关键词，或清除筛选条件。</p>}</div>}
       <div className="virtual-list" role="list" style={{ height: rows.getTotalSize() }}>
         {visible.map(row => <div className="virtual-row" key={row.key} role="presentation"
           style={{ height: rowHeight, transform: `translateY(${row.start}px)`, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>

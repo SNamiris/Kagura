@@ -72,6 +72,8 @@ pub(crate) struct UiFilters {
     pub author: Option<String>,
     pub tag: Option<String>,
     pub missing: Vec<Missing>,
+    pub missing_textures: bool,
+    pub nonstandard_bones: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -89,6 +91,8 @@ impl UiFilters {
             author_contains: self.author.filter(|s| !s.is_empty()),
             tag: self.tag.filter(|s| !s.is_empty()),
             missing_any: self.missing,
+            missing_textures: self.missing_textures,
+            nonstandard_bones: self.nonstandard_bones,
             sort: sort.field,
             descending: Some(sort.descending),
             ..Default::default()
@@ -146,6 +150,7 @@ impl Library {
 }
 
 pub(crate) struct Desktop {
+    pub parse_jobs: crate::parse_jobs::ParseJobs,
     database: PathBuf,
     settings: PathBuf,
     active: Option<Library>,
@@ -155,6 +160,7 @@ impl Desktop {
     pub fn new(database: PathBuf) -> Self {
         Self {
             settings: database.with_file_name("settings.json"),
+            parse_jobs: Default::default(),
             database,
             active: None,
         }
@@ -193,6 +199,15 @@ impl Desktop {
         self.active
             .as_mut()
             .ok_or_else(|| ApiError::new("library_closed", "请先打开资产库"))
+    }
+
+    pub fn parse_background<R: tauri::Runtime>(&self, app: &tauri::AppHandle<R>) -> Reply<()> {
+        let lib = self
+            .active
+            .as_ref()
+            .ok_or_else(|| ApiError::new("library_closed", "请先打开资产库"))?;
+        self.parse_jobs
+            .start(app.clone(), lib.root.clone(), self.database.clone())
     }
 
     /// Returns true when reopening a library whose previous preview permissions were revoked.

@@ -6,6 +6,7 @@ import type { AssetDetail } from './generated/AssetDetail'
 import type { AssetRef } from './generated/AssetRef'
 import type { AssetSummary } from './generated/AssetSummary'
 import { AssetEditor, type EditStatus } from './AssetEditor'
+import { ParsedFiles } from './ParsedFiles'
 
 const labels: Record<string, string> = {
   author: '作者', name: '名称', name_original: '原名', title: '曲名', composer: '作曲者', edition: '版本', suffix: '后缀', part: '类别',
@@ -40,9 +41,9 @@ function ReferenceLinks({ title, refs, follow }: { title: string, refs: AssetRef
       <span>{ref.name || ref.id}<small>{ref.field}</small></span><ArrowUpRight size={14}/></button>)}</section>
 }
 
-export function Details({ id, close, follow, back, guard, onStatus, saved, canEdit }: {
+export function Details({ id, close, follow, back, guard, onStatus, saved, canEdit, parseRevision }: {
   id: string, close: () => void, follow: (id: string) => void, back?: () => void,
-  guard: (action: () => void) => void, onStatus: (status: EditStatus) => void, saved: () => void, canEdit: boolean,
+  guard: (action: () => void) => void, onStatus: (status: EditStatus) => void, saved: () => void, canEdit: boolean, parseRevision: number,
 }) {
   const [detail, setDetail] = useState<AssetDetail>()
   const [children, setChildren] = useState<AssetSummary[]>()
@@ -54,14 +55,15 @@ export function Details({ id, close, follow, back, guard, onStatus, saved, canEd
     let active = true
     api.asset(id).then(async data => {
       if (!active) return
-      setDetail(data)
+      // A header refresh must preserve the open editor's manifest and optimistic-lock hash.
+      setDetail(current => current ? { ...current, model_info: data.model_info, motion_info: data.motion_info } : data)
       if (data.summary.asset_type === 'song') {
         const items = await api.children(id)
         if (active) setChildren(items)
       }
     }).catch((e: unknown) => { if (active) setError(errorText(e)) })
     return () => { active = false }
-  }, [id, attempt])
+  }, [id, attempt, parseRevision])
   const asset = detail?.summary
   const manifest = object(detail?.manifest)
   const category = typeOf(asset?.asset_type ?? '')
@@ -70,6 +72,7 @@ export function Details({ id, close, follow, back, guard, onStatus, saved, canEd
   const license = object(manifest.license)
   const source = object(manifest.source)
   const tags = list(manifest.tags)
+  const primaryModel = list(manifest.variants).map(object).find(variant => variant.main === true)?.file
   const groupedChildren = new Map<string, AssetSummary[]>()
   for (const item of children ?? []) {
     const part = item.part ?? '其他'
@@ -99,6 +102,7 @@ export function Details({ id, close, follow, back, guard, onStatus, saved, canEd
         <p className="detail-byline">{isSong ? '作曲者' : '作者'} · {person(asset.author || asset.composer)}</p>
         <div className="asset-location"><p title={detail.absolute_path}>{detail.absolute_path}</p>
           <button onClick={() => { api.folder(id).catch((e: unknown) => setError(errorText(e))) }}><FolderOpen size={14}/>打开所在文件夹</button></div>
+        <ParsedFiles detail={detail} primary={typeof primaryModel === 'string' ? primaryModel : undefined}/>
         <section className="detail-section"><h3>基本信息</h3><dl className="fields">
           <div><dt>ID</dt><dd className="asset-id">{asset.id}</dd></div>
           {asset.kind && <div><dt>类别</dt><dd>{kinds.find(k => k.value === asset.kind)?.label ?? asset.kind}</dd></div>}

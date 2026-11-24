@@ -1,0 +1,51 @@
+.parse-section select {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.parse-section .parse-path {
+  color: var(--muted);
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.parse-caption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.parse-caption strong { overflow-wrap: anywhere; font-size: 14px; }
+.parse-caption span { flex: none; color: var(--muted); font-size: 11px; }
+.parse-target > div { display: flex; gap: 8px; align-items: baseline; margin-top: 3px; font-size: 12px; }
+.parse-target dt { flex: none; color: var(--muted); }
+.parse-target dd { overflow-wrap: anywhere; }
+.parse-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 8px 0;
+  padding: 8px 0;
+  border-block: 1px solid var(--line);
+}
+.parse-counts.motion-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.parse-counts dt, .parse-properties dt { color: var(--muted); font-size: 11px; }
+.parse-counts dd { font-size: 17px; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.parse-counts small { font-size: 12px; font-weight: 400; }
+.parse-properties { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; row-gap: 4px; }
+.parse-properties > div { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
+.parse-properties dd { font-size: 12px; font-variant-numeric: tabular-nums; }
+.parse-warning { color: var(--danger); font-weight: 650; }
+.parse-extra { margin-top: 8px; font-size: 12px; }
+.parse-extra > summary { width: fit-content; color: var(--muted); cursor: pointer; }
+.parse-extra[open] > summary { margin-bottom: 4px; }
+.parse-extra dd { white-space: pre-wrap; }
+.parse-failure { display: flex; gap: 7px; align-items: baseline; color: var(--danger); font-size: 12px; }
+.parse-failure svg { align-self: flex-start; margin-top: 2px; }
+.parse-failure p { color: var(--muted); margin-top: 3px; font-size: 12px; }
+.parse-status progress { width: 54px; height: 5px; accent-color: var(--accent-fill); }
+.parse-status-error { color: var(--danger); }
+@media (max-width: 700px) {
+  .statusbar:has(.parse-status) .last-scan { display: none; }
+  .parse-status progress { display: none; }
+}

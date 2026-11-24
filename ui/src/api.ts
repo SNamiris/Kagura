@@ -14,6 +14,7 @@ import type { EditPatch } from './generated/EditPatch'
 import type { EditResult } from './generated/EditResult'
 import type { RecentEdits } from './generated/RecentEdits'
 import type { TagSuggestions } from './generated/TagSuggestions'
+import type { ParseStatus } from './generated/ParseStatus'
 
 export const pageSize = 200
 export const api = {
@@ -22,6 +23,7 @@ export const api = {
   open: (root: string) => invoke<LibraryStats>('open_library', { root }),
   stats: () => invoke<LibraryStats>('stats'),
   rescan: () => invoke<IndexChanges>('rescan'),
+  parseStatus: () => invoke<ParseStatus>('parse_status'),
   search: (query: string, filters: UiFilters, sort: SortSpec, offset: number) =>
     invoke<SearchPage>('search', { query, filters, sort, limit: pageSize, offset }),
   asset: (id: string) => invoke<AssetDetail>('get_asset', { id }),

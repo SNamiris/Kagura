@@ -10,6 +10,7 @@ import { DiscardDialog } from './DiscardDialog'
 import { EditHistory } from './EditHistory'
 import type { EditStatus } from './AssetEditor'
 import { Sidebar } from './Sidebar'
+import { useParseStatus } from './useParseStatus'
 import { defaultSort, emptyFilters, number } from './presentation'
 import type { LibraryStats } from './generated/LibraryStats'
 import './App.css'
@@ -26,6 +27,12 @@ export default function App() {
   const [sort, setSort] = useState(defaultSort)
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [revision, setRevision] = useState(0)
+  const [scanCycle, setScanCycle] = useState(0)
+  const parsed = useParseStatus(library?.root, scanCycle)
+  const job = parsed?.status
+  const parseActive = job?.phase === 'running'
+  const parseIssue = parsed?.error ?? (job?.phase === 'failed' ? job.error || '任务中断' : null)
+  const parsedFilter = filters.missing_textures || filters.nonstandard_bones
   const [history, setHistory] = useState<string[]>([])
   const [checking, setChecking] = useState(false)
   const [recent, setRecent] = useState(false)
@@ -121,6 +128,7 @@ export default function App() {
       setBusy('open')
       const stats = await api.open(selection.root)
       setLibrary(stats)
+      setScanCycle(n => n + 1)
       setInput(''); setQuery(''); setFilters(emptyFilters); clearDetails(); setFiltersVisible(false)
       setRevision(n => n + 1)
     } catch (e: unknown) { setError(errorText(e)) } finally { setBusy(null) }
@@ -130,6 +138,7 @@ export default function App() {
     setError(''); setBusy('rescan'); setMessage('')
     try {
       const changes = await api.rescan()
+      setScanCycle(n => n + 1)
       setLibrary(await api.stats())
       setRevision(n => n + 1)
       const changed = changes.inserted || changes.updated || changes.deleted || changes.files_changed || changes.files_deleted
@@ -160,11 +169,13 @@ export default function App() {
       {!busy && <button className="icon-button" aria-label="关闭提示" onClick={() => { setError(''); setMessage('') }}><X size={14}/></button>}</div>}
     {library ? <div className="workspace">
       <Sidebar stats={library} filters={filters} onChange={setFilters} choose={() => guard(() => { void choose() })} busy={!!busy}/>
-      <Catalog key={JSON.stringify([query, filters, sort, revision])} query={query} filters={filters} sort={sort} setSort={setSort}
+      <Catalog key={JSON.stringify([query, filters, sort, revision, parsedFilter && parsed?.revision])} query={query} filters={filters} sort={sort} setSort={setSort}
+        parsingMatches={parsedFilter && parseActive}
         view={view} setView={setView} selected={selected} open={id => {
           if (id !== selected) guard(() => { setHistory([id]); setFiltersVisible(false) })
         }}/>
       {selected && <Details key={[selected, revision, detailRevision].join(':')} id={selected} close={() => guard(clearDetails)} follow={follow}
+        parseRevision={parsed?.revision ?? 0}
         canEdit={!busy} guard={guard} onStatus={onStatus} saved={() => refreshAfterEdit('已保存修改')}
         back={history.length > 1 ? () => guard(() => setHistory(old => old.slice(0, -1))) : undefined}/>}
     </div> : <section className="welcome"><div className="welcome-inner"><span className="welcome-icon"><LibraryBig size={36} strokeWidth={1.4}/></span>
@@ -172,7 +183,14 @@ export default function App() {
       {busy ? <p className="loading" role="status" data-testid="library-busy"><span className="spinner"/>{loading}</p>
         : <button className="primary" disabled={!isTauri()} onClick={() => void choose()}><FolderOpen size={17}/>选择库文件夹</button>}</div></section>}
     <footer className="statusbar"><span title={library?.root}><FolderOpen size={13}/>{library?.root ?? '尚未连接资产库'}</span>
-      {library && <><span>{number(library.total)} 份资产</span><span><Activity size={13}/>上次扫描 {new Date(library.last_scan * 1000).toLocaleString('zh-CN',{hour12:false})}</span></>}</footer>
+      {library && <><span>{number(library.total)} 份资产</span>
+        {parseActive && <span className="parse-status">{job.total
+          ? `解析文件 ${number(job.cached + job.processed)} / ${number(job.total)}`
+          : '正在核对解析清单…'}
+          <progress aria-label="文件解析进度" value={job.total ? job.cached + job.processed : undefined} max={job.total || 1}/></span>}
+        {parseIssue ? <span className="parse-status parse-status-error" role="alert" title={parseIssue}>解析中断，可重新扫描</span>
+          : job?.phase === 'complete' && job.failed > 0 && <span className="parse-status" title="打开文件所属资产的详情可查看失败原因">本次解析失败 {number(job.failed)} 个文件</span>}
+        <span className="last-scan"><Activity size={13}/>上次扫描 {new Date(library.last_scan * 1000).toLocaleString('zh-CN',{hour12:false})}</span></>}</footer>
     {checking && <CheckDialog close={() => setChecking(false)}/>}
     {recent && <EditHistory close={() => setRecent(false)} guard={guard} setWorking={value => { undoing.current = value }}
       restored={() => refreshAfterEdit('已撤回修改')}/>}

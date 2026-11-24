@@ -61,6 +61,7 @@ fn command_typescript() {
             Settings,
             ApiError,
             LibraryStats,
+            crate::parse_jobs::ParseStatus,
             IndexChanges,
             UiFilters,
             SortSpec,
@@ -249,6 +250,66 @@ fn editing_commands_roundtrip_through_ipc() {
     assert_eq!(
         invoke("list_edits", json!({"limit":1})).unwrap()[0]["undone"],
         true
+    );
+}
+
+#[test]
+fn background_parse_reports_generations_and_file_errors() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("one");
+    let model = root.join("Library/Models/Props/Builder/Box");
+    fs::create_dir_all(&model).unwrap();
+    fs::write(model.join("_asset.manifest.json"),
+        include_bytes!("../../crates/kagura-core/tests/fixtures/mini_library/Library/Models/Props/Builder/Box/_asset.manifest.json")).unwrap();
+    fs::write(model.join("damaged.pmx"), b"PMX ").unwrap();
+    let mut motion = b"Vocaloid Motion Data 0002".to_vec();
+    motion.resize(74, 0);
+    fs::write(model.join("sample.vmd"), motion).unwrap();
+    let app = mock_builder()
+        .manage(Mutex::new(Desktop::new(temp.path().join("cache/index.sqlite"))))
+        .invoke_handler(crate::handlers())
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let call = |cmd, body| invoke_on(&window, cmd, body).unwrap();
+    let until_complete = |generation: u32| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        loop {
+            let state = call("parse_status", json!({}));
+            assert_ne!(state["phase"], "failed", "{state}");
+            if state["phase"] == "complete" && state["generation"] == generation {
+                break state;
+            }
+            assert!(std::time::Instant::now() < deadline, "{state}");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    };
+    assert_eq!(call("parse_status", json!({}))["phase"], "idle");
+    call("open_library", json!({"root":root}));
+    let browse = call(
+        "search",
+        json!({"query":"Box","filters":{}, "sort":{"field":"name","descending":false},"limit":5,"offset":0}),
+    );
+    assert_eq!(browse["total"], 1);
+    let state = until_complete(1);
+    assert_eq!(
+        (state["total"].as_u64(), state["failed"].as_u64()),
+        (Some(2), Some(1))
+    );
+    let detail = call("get_asset", json!({"id":browse["items"][0]["id"]}));
+    assert_eq!(detail["model_info"][0]["parse_error"]["section"], "header");
+    assert_eq!(detail["motion_info"][0]["max_frame"], 0);
+    call("rescan", json!({}));
+    assert_eq!(until_complete(2)["cached"], 2);
+    let other = temp.path().join("two");
+    fs::create_dir_all(other.join("Library")).unwrap();
+    let switched = call("open_library", json!({"root":other}));
+    let empty = until_complete(3);
+    assert_eq!(
+        (empty["root"].as_str(), empty["total"].as_u64()),
+        (switched["root"].as_str(), Some(0))
     );
 }
 

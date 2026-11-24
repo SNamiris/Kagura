@@ -92,6 +92,8 @@ pub(crate) async fn open_library<R: Runtime>(app: AppHandle<R>, root: Input<Stri
         let (stats, restart) = desktop.open(Path::new(&root.0), &app.asset_protocol_scope())?;
         if restart {
             app.request_restart();
+        } else {
+            desktop.parse_background(app)?;
         }
         Ok(stats)
     })
@@ -100,11 +102,18 @@ pub(crate) async fn open_library<R: Runtime>(app: AppHandle<R>, root: Input<Stri
 
 #[tauri::command]
 pub(crate) async fn rescan<R: Runtime>(app: AppHandle<R>) -> Reply<IndexChanges> {
-    with_desktop(app, |desktop, _| {
+    with_desktop(app, |desktop, app| {
         let library = desktop.current()?;
-        Ok(library.index.update(&library.root)?)
+        let changes = library.index.update(&library.root)?;
+        desktop.parse_background(app)?;
+        Ok(changes)
     })
     .await
+}
+
+#[tauri::command]
+pub(crate) async fn parse_status<R: Runtime>(app: AppHandle<R>) -> Reply<crate::parse_jobs::ParseStatus> {
+    with_desktop(app, |desktop, _| desktop.parse_jobs.status()).await
 }
 
 #[tauri::command]

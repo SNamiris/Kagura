@@ -107,6 +107,8 @@ pub struct SearchFilters {
     pub kinds: Vec<String>,
     pub author_contains: Option<String>,
     pub missing_any: Vec<Missing>,
+    pub missing_textures: bool,
+    pub nonstandard_bones: bool,
     pub sort: Sort,
     /// None sorts names ascending, dates and ratings descending.
     pub descending: Option<bool>,
@@ -221,6 +223,12 @@ impl Index {
                 .map(|missing| missing.predicate())
                 .collect();
             predicates.push(format!("({})", terms.join(" OR ")));
+        }
+        if filters.missing_textures {
+            predicates.push("EXISTS(SELECT 1 FROM model_info m JOIN model_variants v ON v.asset_id=m.asset_id AND v.file_key=m.file_key WHERE m.asset_id=a.id AND EXISTS(SELECT 1 FROM model_textures t WHERE t.info_id=m.info_id AND t.present=0))".into());
+        }
+        if filters.nonstandard_bones {
+            predicates.push("EXISTS(SELECT 1 FROM model_info m JOIN model_variants v ON v.asset_id=m.asset_id AND v.file_key=m.file_key WHERE m.asset_id=a.id AND m.standard_bones=0)".into());
         }
         if !predicates.is_empty() {
             from.push_str(" WHERE ");
