@@ -1,5 +1,7 @@
 mod commands;
 mod desktop;
+mod duplicates;
+mod hash_jobs;
 mod parse_jobs;
 
 use std::sync::Mutex;
@@ -15,11 +17,18 @@ fn handlers<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Sen
         commands::open_library,
         commands::rescan,
         commands::parse_status,
+        duplicates::hash_status,
+        duplicates::start_hash,
+        duplicates::pause_hash,
+        duplicates::cancel_hash,
+        duplicates::dedup_page,
+        duplicates::export_duplicates,
         commands::search,
         commands::get_asset,
         commands::song_children,
         commands::stats,
         commands::open_folder,
+        commands::open_copy_folder,
         commands::run_check,
         commands::edit_asset,
         commands::undo_edit,

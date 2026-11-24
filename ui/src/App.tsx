@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { Activity, Disc3, FolderOpen, History, LibraryBig, RefreshCw, Search, ShieldCheck, SlidersHorizontal, X } from 'lucide-react'
+import { Activity, Copy, Disc3, FolderOpen, History, LibraryBig, RefreshCw, Search, ShieldCheck, SlidersHorizontal, X } from 'lucide-react'
 import { api, errorText } from './api'
 import { Catalog } from './Catalog'
 import { CheckDialog } from './CheckDialog'
 import { Details } from './Details'
 import { DiscardDialog } from './DiscardDialog'
+import { Duplicates } from './Duplicates'
 import { EditHistory } from './EditHistory'
 import type { EditStatus } from './AssetEditor'
 import { Sidebar } from './Sidebar'
@@ -35,6 +36,7 @@ export default function App() {
   const parsedFilter = filters.missing_textures || filters.nonstandard_bones
   const [history, setHistory] = useState<string[]>([])
   const [checking, setChecking] = useState(false)
+  const [duplicates, setDuplicates] = useState(false)
   const [recent, setRecent] = useState(false)
   const [discardPrompt, setDiscardPrompt] = useState(false)
   const [detailRevision, setDetailRevision] = useState(0)
@@ -159,7 +161,8 @@ export default function App() {
       <div className="brand"><span className="brand-mark"><Disc3 size={24} strokeWidth={1.65}/></span><span lang="en">Kagura</span></div>
       {library && <><div className="search-box"><Search size={17}/><input aria-label="搜索资产" placeholder="搜索资产、作者、标签…" value={input} onChange={e => setInput(e.target.value)} ref={searchBox}/>
         {input ? <button className="icon-button" aria-label="清空搜索" onClick={() => { setInput(''); searchBox.current?.focus() }}><X size={14}/></button> : <kbd>Ctrl K</kbd>}</div>
-        <div className="top-actions"><button aria-label="最近修改" title="最近修改" onClick={() => setRecent(true)} disabled={!!busy}><History size={16}/><span>最近修改</span></button>
+        <div className="top-actions"><button aria-label="重复" title="重复" onClick={() => setDuplicates(true)} disabled={!!busy}><Copy size={16}/><span>重复</span></button>
+          <button aria-label="最近修改" title="最近修改" onClick={() => setRecent(true)} disabled={!!busy}><History size={16}/><span>最近修改</span></button>
           <button aria-label="库检查" title="库检查" onClick={() => setChecking(true)} disabled={!!busy}><ShieldCheck size={16}/><span>库检查</span></button>
           <button aria-label="重新扫描" title="重新扫描" onClick={() => guard(() => { void rescan() })} disabled={!!busy}><RefreshCw size={15}/><span>重新扫描</span></button>
           <button className="mobile-filter icon-button" aria-label="显示筛选" aria-pressed={filtersVisible} onClick={() => setFiltersVisible(v => !v)}><SlidersHorizontal size={16}/></button></div></>}
@@ -192,6 +195,7 @@ export default function App() {
           : job?.phase === 'complete' && job.failed > 0 && <span className="parse-status" title="打开文件所属资产的详情可查看失败原因">本次解析失败 {number(job.failed)} 个文件</span>}
         <span className="last-scan"><Activity size={13}/>上次扫描 {new Date(library.last_scan * 1000).toLocaleString('zh-CN',{hour12:false})}</span></>}</footer>
     {checking && <CheckDialog close={() => setChecking(false)}/>}
+    {duplicates && library && <Duplicates root={library.root} close={() => setDuplicates(false)}/>}
     {recent && <EditHistory close={() => setRecent(false)} guard={guard} setWorking={value => { undoing.current = value }}
       restored={() => refreshAfterEdit('已撤回修改')}/>}
     {discardPrompt && <DiscardDialog keep={() => resolveDiscard(false)} discard={() => resolveDiscard(true)}/>}

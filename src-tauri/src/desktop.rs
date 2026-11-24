@@ -105,6 +105,7 @@ pub(crate) fn display(path: &Path) -> String {
 }
 
 pub(crate) struct Library {
+    pub report: Option<crate::duplicates::SavedReport>,
     pub root: PathBuf,
     pub index: Index,
     granted_previews: bool,
@@ -150,6 +151,7 @@ impl Library {
 }
 
 pub(crate) struct Desktop {
+    pub hash_jobs: crate::hash_jobs::HashJobs,
     pub parse_jobs: crate::parse_jobs::ParseJobs,
     database: PathBuf,
     settings: PathBuf,
@@ -161,6 +163,7 @@ impl Desktop {
         Self {
             settings: database.with_file_name("settings.json"),
             parse_jobs: Default::default(),
+            hash_jobs: Default::default(),
             database,
             active: None,
         }
@@ -199,6 +202,17 @@ impl Desktop {
         self.active
             .as_mut()
             .ok_or_else(|| ApiError::new("library_closed", "请先打开资产库"))
+    }
+
+    pub fn database(&self) -> &Path {
+        &self.database
+    }
+
+    pub fn hash_inventory(&self) -> Reply<()> {
+        if let Some(lib) = &self.active {
+            self.hash_jobs.inventory(&lib.root, &lib.index.hash_coverage()?)?;
+        }
+        Ok(())
     }
 
     pub fn parse_background<R: tauri::Runtime>(&self, app: &tauri::AppHandle<R>) -> Reply<()> {
@@ -260,6 +274,7 @@ impl Desktop {
             return Err(error);
         }
         let mut library = Library {
+            report: None,
             root,
             index,
             granted_previews: false,
@@ -277,6 +292,7 @@ impl Desktop {
         let restart = scope.is_forbidden(library.root.join("Library"));
         let result = library.stats()?;
         self.active = Some(library);
+        self.hash_inventory()?;
         Ok((result, restart))
     }
 }

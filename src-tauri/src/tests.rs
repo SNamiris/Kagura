@@ -62,6 +62,11 @@ fn command_typescript() {
             ApiError,
             LibraryStats,
             crate::parse_jobs::ParseStatus,
+            crate::hash_jobs::HashStatus,
+            crate::duplicates::ExportedReport,
+            kagura_core::index::dedup::DedupPage,
+            kagura_core::index::dedup::DedupSection,
+            kagura_core::index::dedup::DedupOptions,
             IndexChanges,
             UiFilters,
             SortSpec,
@@ -156,6 +161,15 @@ fn library_commands_use_the_mini_library_and_reject_external_paths() {
         assert_eq!(error["code"], "invalid_argument");
         assert!(error["message"].as_str().unwrap().contains("id"));
     }
+    let id = &asset["summary"]["id"];
+    assert_eq!(
+        invoke("open_copy_folder", json!({"id":id,"rel":"missing/file.txt"})).unwrap_err()["code"],
+        "file_not_found"
+    );
+    assert_eq!(
+        invoke("open_copy_folder", json!({"id":id,"rel":"../escape.txt"})).unwrap_err()["code"],
+        "index_error"
+    );
     assert_eq!(
         invoke("rescan", json!({})).unwrap(),
         serde_json::to_value(IndexChanges::default()).unwrap()
@@ -251,6 +265,87 @@ fn editing_commands_roundtrip_through_ipc() {
         invoke("list_edits", json!({"limit":1})).unwrap()[0]["undone"],
         true
     );
+}
+
+#[test]
+fn duplicates_ipc_uses_cached_hashes_and_exports_outside_the_library() {
+    use kagura_core::index::dedup::DuplicateReport;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("library-root");
+    let dir = root.join("Library/Models/Props/Builder/Box");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("_asset.manifest.json"),
+        include_bytes!("../../crates/kagura-core/tests/fixtures/mini_library/Library/Models/Props/Builder/Box/_asset.manifest.json")).unwrap();
+    for name in ["first.bin", "second.bin"] {
+        fs::write(dir.join(name), vec![17; 8192]).unwrap();
+    }
+    let db = temp.path().join("cache/index.sqlite");
+    let app = mock_builder()
+        .manage(Mutex::new(Desktop::new(db.clone())))
+        .invoke_handler(crate::handlers())
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let call = |cmd, body| invoke_on(&window, cmd, body);
+    assert_eq!(
+        call("start_hash", json!({"threads":2})).unwrap_err()["code"],
+        "library_closed"
+    );
+    call("open_library", json!({"root":root})).unwrap();
+    assert_eq!(
+        call("start_hash", json!({"threads":0})).unwrap_err()["code"],
+        "invalid_argument"
+    );
+    let page = || {
+        call(
+            "dedup_page",
+            json!({"options":{},"section":"within","offset":0,"limit":12}),
+        )
+        .unwrap()
+    };
+    assert_eq!(page()["summary"]["hashed_files"], 0);
+    assert_eq!(
+        call("start_hash", json!({"threads":2})).unwrap()["phase"],
+        "running"
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        let status = call("hash_status", json!({})).unwrap();
+        assert_ne!(status["phase"], "failed", "{status}");
+        if status["phase"] == "complete" {
+            assert_eq!(status["completed_bytes"], 16384);
+            assert_eq!(status["completed_files"], 2);
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "{status}");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let ready = page();
+    assert_eq!(ready["file_groups"][0]["reclaim_bytes"], 8192);
+    assert_eq!(ready["summary"]["within"]["groups"], 1);
+    let report = DuplicateReport::read_cache(&db, Default::default()).unwrap();
+    let outside = temp.path().join("report.json");
+    crate::duplicates::write_export(&report, &outside).unwrap();
+    let exported: Value = serde_json::from_slice(&fs::read(outside).unwrap()).unwrap();
+    assert_eq!(exported["within"], ready["file_groups"]);
+    for path in [
+        root.join("bad.json"),
+        dir.join("nested.json"),
+        temp.path().join("bad.csv"),
+    ] {
+        assert_eq!(
+            crate::duplicates::write_export(&report, &path).unwrap_err().code,
+            "export_location"
+        );
+        assert!(!path.exists());
+    }
+    let other = temp.path().join("empty-root");
+    fs::create_dir_all(other.join("Library")).unwrap();
+    call("open_library", json!({"root":other})).unwrap();
+    assert_eq!(page()["total"], 0);
+    assert_eq!(call("hash_status", json!({})).unwrap()["completed_files"], 0);
 }
 
 #[test]

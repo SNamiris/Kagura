@@ -16,7 +16,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::desktop::{display, ApiError, Desktop, LibraryStats, Reply, Settings, SortSpec, UiFilters};
 
 /// Keep IPC deserialization failures in the same error format as command failures.
-pub(crate) struct Input<T>(T);
+pub(crate) struct Input<T>(pub(crate) T);
 
 impl<'de, R: Runtime, T: Deserialize<'de>> CommandArg<'de, R> for Input<T> {
     fn from_command(command: CommandItem<'de, R>) -> Result<Self, InvokeError> {
@@ -43,13 +43,13 @@ pub(crate) struct RecentEdits(Vec<EditEntry>);
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct TagSuggestions(Vec<String>);
 
-async fn background<T: Send + 'static>(f: impl FnOnce() -> Reply<T> + Send + 'static) -> Reply<T> {
+pub(crate) async fn background<T: Send + 'static>(f: impl FnOnce() -> Reply<T> + Send + 'static) -> Reply<T> {
     tauri::async_runtime::spawn_blocking(f)
         .await
         .map_err(|e| ApiError::new("worker_error", e))?
 }
 
-async fn with_desktop<R: Runtime, T: Send + 'static>(
+pub(crate) async fn with_desktop<R: Runtime, T: Send + 'static>(
     app: AppHandle<R>,
     job: impl FnOnce(&mut Desktop, &AppHandle<R>) -> Reply<T> + Send + 'static,
 ) -> Reply<T> {
@@ -105,6 +105,7 @@ pub(crate) async fn rescan<R: Runtime>(app: AppHandle<R>) -> Reply<IndexChanges>
     with_desktop(app, |desktop, app| {
         let library = desktop.current()?;
         let changes = library.index.update(&library.root)?;
+        desktop.hash_inventory()?;
         desktop.parse_background(app)?;
         Ok(changes)
     })
@@ -177,12 +178,33 @@ pub(crate) async fn open_folder<R: Runtime>(app: AppHandle<R>, id: Input<String>
             .index
             .asset_directory(&library.root, &id.0)?
             .ok_or_else(ApiError::missing)?;
-        app.opener()
-            .open_path(display(&dir), None::<&str>)
-            .map_err(|e| ApiError::new("open_folder", e))?;
-        Ok(FolderOpened(()))
+        launch_folder(app, &dir)
     })
     .await
+}
+
+#[tauri::command]
+pub(crate) async fn open_copy_folder<R: Runtime>(
+    app: AppHandle<R>,
+    id: Input<String>,
+    rel: Input<String>,
+) -> Reply<FolderOpened> {
+    with_desktop(app, move |desktop, app| {
+        let library = desktop.current()?;
+        let dir = library
+            .index
+            .payload_directory(&library.root, &id.0, &rel.0)?
+            .ok_or_else(|| ApiError::new("file_not_found", "索引中没有这份资产的指定文件"))?;
+        launch_folder(app, &dir)
+    })
+    .await
+}
+
+fn launch_folder<R: Runtime>(app: &AppHandle<R>, dir: &Path) -> Reply<FolderOpened> {
+    app.opener()
+        .open_path(display(dir), None::<&str>)
+        .map_err(|e| ApiError::new("open_folder", e))?;
+    Ok(FolderOpened(()))
 }
 
 #[tauri::command]
