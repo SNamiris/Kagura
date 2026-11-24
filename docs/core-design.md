@@ -151,7 +151,7 @@ pub fn song_map(records: &[Record]) -> Result<SongMap>;   // 对应 known_songs(
 
 ### 3.7 `index`
 
-`Index::default_path()` 返回 `%APPDATA%\Kagura\index.sqlite`。`Index::open(path)` 接受自定义缓存路径。已知库根时，使用 `Index::open_for_library(path, root)` 在创建数据库和目录前解析真实路径并拒绝库根内的输出。SQLite 采用 WAL。缓存的 `application_id` 为 `0x4B475241`，`user_version` 为 1。版本不符时重新建表，再通过 `update(root)` 或全量扫描填充。关闭后可删除缓存，下次从 manifest 完整重建。
+`Index::default_path()` 返回 `%APPDATA%\Kagura\index.sqlite`。`Index::open(path)` 接受自定义缓存路径。已知库根时，使用 `Index::open_for_library(path, root)` 在创建数据库和目录前解析真实路径并拒绝库根内的输出。SQLite 采用 WAL。缓存的 `application_id` 为 `0x4B475241`，`user_version` 为 2。版本不符时重新建表，`update(root)` 填充资产与文件清单，`parse_files` 从模型与动作文件重建技术数据。
 
 | 表 | 内容 |
 |---|---|
@@ -162,6 +162,10 @@ pub fn song_map(records: &[Record]) -> Result<SongMap>;   // 对应 known_songs(
 | `assets_fts` | FTS5 `trigram`，以 rowid 对应 assets。搜索 name、name_original、author、character、series、title、title_alias、tags、note。显示名、key 中的名称和作者别名均可检索，数组用换行连接。 |
 | `meta` | 单行记录规范化的库根、上次成功扫描的 Unix 秒数、资产数及归属到资产的负载文件数。 |
 | `skipped_manifests` | 以路径为主键，缓存预期深度的外来 manifest、运行配置与普通 JSON 的 mtime 和 size。内容发生变化后重新识别。 |
+| `model_info`、`motion_info` | 每个资产内相对文件名各有一行。模型保存双语名及注释、格式、编码、网格与骨骼等计数和标记。动作保存目标、最大帧号、秒数及六类关键帧数。失败行保存段名、偏移和原因，未知读数为 NULL。 |
+| `model_bones`、`model_morphs`、`motion_bones`、`motion_morphs` | 每行通过 `info_id` 关联解析结果。模型按文件顺序保存名称，动作保存去重的轨道名。 |
+| `model_textures`、`model_variants` | 保存贴图原名、库内解析路径和存在状态；变体表关联 manifest 声明的模型文件，用于筛选。 |
+| `parse_state` | 记录文件清单与贴图复核的版本。移除文件时级联清理结果，大小或修改时间变化时清除该文件的旧解析。 |
 
 `rebuild(&report)` 在一个事务内重建缓存。推荐传入 `scan_library_for_check(root)` 的完整清单。`update(root)` 遍历目录项，以大小和纳秒修改时间判断哪些 manifest 需要重新读取、校验。资产的增删改和文件清单在同一事务内同步，未变文件保留哈希，失败时回滚。切换到另一个库根会重新填充缓存。
 
@@ -200,6 +204,41 @@ cargo run -p kagura-core --release --example build_index -- G:\MMD
 
 MCP 的写操作也走这一套，agent 只能提交计划，执行需要用户确认。
 
+### 3.10 `parse`（模型与动作）
+
+解析器使用 128 KiB 的 `BufReader<File>`，按段读取计数、名称和帧号，按索引宽度跳过几何、插值及物理参数。跳过前检查是否超出文件长度。错误包含段名、从文件开头计的字节偏移和原因。PMX 单段解码文本上限为 8 MiB，文本和名称列表的读入预算为 64 MiB。无效编码用替换字符解码。
+
+- **PMX 2.0 / 2.1** 识别 UTF-16LE / UTF-8、双语模型名和注释、顶点、三角面、贴图、材质、骨骼、表情、刚体与关节。保留骨骼名和表情名。
+- **PMD** 以 Shift-JIS 读取模型名、注释与定长名称，支持英文扩展。从材质的纹理文件名字段拆出 `*` 分隔的贴图及球面贴图，按首次出现去重。表情计数排除 base。
+- **VMD** 识别 `0002` 的 20 字节目标名和 `file` 的 10 字节目标名。统计骨骼、表情、镜头、光照、自阴影和 IK 显示六段，记录各段共同的最大帧号、使用的骨骼及表情名。时长按最大帧号 / 30 计算。目标为「カメラ・照明」或包含镜头关键帧时标记为镜头。
+
+`STANDARD_BONES` 默认检查「センター、上半身、下半身、首、頭、左腕、右腕、左足、右足」九个名称。调用者可用 `has_required_bones` 指定另一份清单。刚体数大于零表示有物理。贴图相对模型文件定位，允许库内共享贴图，越出 Library 的路径与重解析点记为缺失。模型筛选按资产去重，只统计 manifest 声明的变体；道具也按相同标准判断骨骼齐全与否。
+
+每次打开库或重扫后，桌面用独立 SQLite 连接在后台运行解析，按批提交。读写解析缓存期间仍可浏览已有资产。成功结果和损坏文件诊断均以大小和纳秒修改时间复用；贴图增删可以单独更新存在状态。解析全程只读资产文件，技术数据存入索引。可用 `cargo run -p kagura-core --release --example parse_library -- G:\MMD` 复核计数与耗时；再运行 `python -B tools/verify_parse.py G:\MMD <索引路径>` 按稳定路径抽样，各对照 200 个 PMX 和 VMD。
+
+#### 真实库验收（2026-11-24）
+
+Windows release 版本在空解析缓存上读取 20,953 个文件并写入结果，用时 256.100 秒。另计基础索引重建 25.785 秒。无变化的复跑中，清单更新 0.501 秒，解析缓存复核 0.062 秒，重读 0 个文件。
+
+| 格式 | 文件数 | 成功 | 失败 |
+|---|---:|---:|---:|
+| PMX | 6,125 | 6,125 | 0 |
+| PMD | 1,022 | 1,022 | 0 |
+| VMD | 13,806 | 13,708 | 98 |
+
+| VMD 出错段 | 数量 | 实际文件及诊断示例 |
+|---|---:|---|
+| 光照 | 67 | `爆発モーション.vmd`，偏移 181，声明需要 3,640 字节，余 61。 |
+| 自阴影 | 18 | `Let me in the bathroom.vmd`，偏移 1,047,434，声明需要 29,300,097,024 字节，余 61。 |
+| 表情 | 6 | `Motion0.vmd`，偏移 22,890,807，到文件末尾仍缺 4 字节的段计数。 |
+| IK 显示 | 5 | `メダロット・ハク.vmd`，偏移 1,137,741，读取 IK 控制器列表时仅余 15 字节。 |
+| 骨骼 | 1 | `into the unknown (panic at the disco ver).vmd`，偏移 54，声明需要 11,235,975 字节，余 4,405,923。 |
+| 签名 | 1 | `phuthon.vmd`，前 30 字节与两种已知签名均不匹配。 |
+
+独立 Python 读取器按库内路径 SHA-256 排序抽样，候选集包括解析失败的文件。200 份 PMX 的模型名、顶点数、骨骼数、表情数逐项一致。200 份 VMD 中，197 份的目标名、最大帧号与六段计数逐项一致，另 3 份均被两端拒绝。额外核对了全库 4 份 PMX 2.1。Blender 的 MMD Tools 4.5.14 独立读取 24 份 PMX 2.0，96 个字段均一致。
+
+按模型资产的声明变体统计，227 份缺少贴图，495 份标准骨骼不齐全；若把模型目录内随附的全部模型文件也计入，两项分别为 229 和 586。采集前后逐一核对路径、修改时间和内容摘要，8,824 份 manifest 全部一致。
+
 ---
 
 ## 4. 依赖（待确认版本）
@@ -207,6 +246,7 @@ MCP 的写操作也走这一套，agent 只能提交计划，执行需要用户�
 | 用途 | crate |
 |---|---|
 | JSON | `serde`、`serde_json`（`preserve_order`） |
+| 模型与动作文本解码 | `encoding_rs 0.8.44`，用于 Shift-JIS、UTF-16LE 和 UTF-8 |
 | Schema 校验 | `jsonschema`（需确认支持 2020-12 和跨文件 `$ref`） |
 | SQLite | `rusqlite`（`bundled`） |
 | 哈希 | `blake3`、`sha2` |
