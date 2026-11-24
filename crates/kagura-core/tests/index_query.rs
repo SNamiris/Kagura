@@ -299,6 +299,30 @@ fn desktop_detail_and_previews_use_only_the_active_assets_files() {
     assert!(index.asset_directory(temp.path(), MODEL).is_err());
     let folder = index.asset_directory(&root, MODEL).unwrap().unwrap();
     assert_eq!(folder.canonicalize().unwrap(), model.canonicalize().unwrap());
+    let nested = index
+        .payload_directory(&root, MODEL, "media/manual.txt")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        nested.canonicalize().unwrap(),
+        model.join("media").canonicalize().unwrap()
+    );
+    fs::write(model.join("media/unindexed.txt"), b"new").unwrap();
+    assert!(index
+        .payload_directory(&root, MODEL, "media/unindexed.txt")
+        .unwrap()
+        .is_none());
+    assert!(index.payload_directory(&root, MODEL, MANIFEST).unwrap().is_none());
+    assert!(index
+        .payload_directory(&root, SONG, "media/manual.txt")
+        .unwrap()
+        .is_none());
+    assert!(index
+        .payload_directory(&root, MODEL, "../outside/file.txt")
+        .is_err());
+    assert!(index
+        .payload_directory(temp.path(), MODEL, "media/manual.txt")
+        .is_err());
 
     let mut items = index
         .search("Box", &SearchFilters::default(), 20, 0)
@@ -331,6 +355,7 @@ fn desktop_detail_and_previews_use_only_the_active_assets_files() {
         assert!(output.status.success(), "{output:?}");
     }
     assert!(index.asset_directory(&root, MODEL).is_err());
+    assert!(index.payload_directory(&root, MODEL, "media/manual.txt").is_err());
     index.load_previews(&root, &mut items).unwrap();
     assert!(items[0].preview_path.is_none());
 }

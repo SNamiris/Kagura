@@ -1,5 +1,6 @@
 //! Rebuildable SQLite search cache. Source library files are only ever opened for reading.
 
+pub mod dedup;
 mod detail;
 mod formats;
 mod hash;
@@ -18,7 +19,7 @@ use thiserror::Error;
 use crate::scan::ScanReport;
 pub use detail::{AssetDetail, AssetRef, LibraryMeta};
 pub use formats::{CachedParseError, ModelFileInfo, MotionFileInfo, ParseProgress};
-pub use hash::{HashProgress, HashReport};
+pub use hash::{HashJobProgress, HashProgress, HashReport, DEFAULT_HASH_THREADS};
 pub use query::{AssetSummary, IndexStats, Missing, SearchFilters, SearchPage, Sort};
 
 const SCHEMA_VERSION: i32 = 2;

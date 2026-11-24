@@ -162,3 +162,135 @@ fn moved_library_requires_an_index_at_the_current_root() {
     lib.index.rebuild(&scan_library(&moved)).unwrap();
     assert_eq!(lib.index.hash_asset(ID).unwrap().hashed_files, 2);
 }
+
+#[test]
+fn parallel_hashes_resume_from_durable_files_and_refresh_stale_sizes() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let mut lib = Library::new();
+    for i in 0..200_u16 {
+        fs::write(lib.file(&format!("sub/{i:03}.bin")), i.to_le_bytes()).unwrap();
+    }
+    lib.index.update(&lib.root).unwrap();
+    let keep = AtomicBool::new(true);
+    let partial = lib
+        .index
+        .hash_all_parallel(
+            &lib.root,
+            2,
+            || keep.load(Ordering::Relaxed),
+            |p| {
+                if p.completed_files >= 64 {
+                    keep.store(false, Ordering::Relaxed);
+                }
+            },
+        )
+        .unwrap();
+    assert!(partial.stopped);
+    assert_eq!((partial.total_files, partial.total_bytes), (202, 407));
+    assert!((64..202).contains(&partial.completed_files));
+    let first = lib.index.hash_coverage().unwrap();
+    assert_eq!(
+        (first.cached_files, first.cached_bytes),
+        (partial.completed_files, partial.completed_bytes)
+    );
+    drop(lib.index);
+    lib.index = Index::open(&lib.db).unwrap();
+    let resumed = lib
+        .index
+        .hash_all_parallel(&lib.root, 4, || true, |_| {})
+        .unwrap();
+    assert_eq!(resumed.cached_files, partial.completed_files);
+    assert_eq!(resumed.cached_bytes, partial.completed_bytes);
+    assert_eq!((resumed.completed_files, resumed.completed_bytes), (202, 407));
+    assert!(!resumed.stopped);
+    assert!(resumed.bytes_per_second > 0.0);
+    assert_eq!(resumed.eta_seconds, Some(0.0));
+    assert_eq!(
+        lib.digest("sub/198.bin").unwrap(),
+        blake3::hash(&198_u16.to_le_bytes()).to_hex().as_str()
+    );
+    fs::write(lib.file("model.txt"), b"new box").unwrap();
+    let changed = lib
+        .index
+        .hash_all_parallel(&lib.root, 1, || true, |_| {})
+        .unwrap();
+    assert_eq!(
+        (changed.cached_files, changed.total_bytes, changed.completed_bytes),
+        (201, 411, 411)
+    );
+    assert_eq!(
+        lib.digest("model.txt").unwrap(),
+        blake3::hash(b"new box").to_hex().as_str()
+    );
+    assert!(lib
+        .index
+        .hash_all_parallel(&lib.root, 0, || true, |_| {})
+        .is_err());
+    assert!(lib
+        .index
+        .hash_all_parallel(&lib.root, 5, || true, |_| {})
+        .is_err());
+    assert!(lib
+        .index
+        .hash_all_parallel(&lib.root.parent().unwrap().join("wrong"), 1, || true, |_| {})
+        .is_err());
+}
+
+#[test]
+fn parallel_job_reports_a_concurrent_inventory_addition() {
+    let mut lib = Library::new();
+    let extra = lib.file("later.bin");
+    let mut other = Index::open(&lib.db).unwrap();
+    let mut added = false;
+    let result = lib.index.hash_all_parallel(
+        &lib.root,
+        2,
+        || true,
+        |_| {
+            if !added {
+                fs::write(&extra, b"later").unwrap();
+                other.update(&lib.root).unwrap();
+                added = true;
+            }
+        },
+    );
+    assert!(result.unwrap_err().to_string().contains("文件清单"));
+    let status = other.hash_coverage().unwrap();
+    assert_eq!((status.total_files, status.completed_files), (3, 2));
+    let resumed = lib
+        .index
+        .hash_all_parallel(&lib.root, 2, || true, |_| {})
+        .unwrap();
+    assert_eq!((resumed.completed_files, resumed.cached_files), (3, 2));
+}
+
+#[test]
+fn interrupted_large_file_is_not_recorded_as_a_complete_digest() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let mut lib = Library::new();
+    let large = vec![0x66; 4 * 1024 * 1024];
+    fs::write(lib.file("000-large.bin"), &large).unwrap();
+    lib.index.update(&lib.root).unwrap();
+    let checks = AtomicUsize::new(0);
+    let interrupted = lib
+        .index
+        .hash_all_parallel(
+            &lib.root,
+            1,
+            || checks.fetch_add(1, Ordering::Relaxed) < 5,
+            |_| {},
+        )
+        .unwrap();
+    assert!(interrupted.stopped);
+    assert_eq!(interrupted.completed_bytes, 0);
+    assert_eq!(lib.digest("000-large.bin"), None);
+    let done = lib
+        .index
+        .hash_all_parallel(&lib.root, 1, || true, |_| {})
+        .unwrap();
+    assert_eq!(done.completed_bytes, large.len() as u64 + 7);
+    assert_eq!(
+        lib.digest("000-large.bin").unwrap(),
+        blake3::hash(&large).to_hex().as_str()
+    );
+}

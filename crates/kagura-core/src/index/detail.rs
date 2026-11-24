@@ -81,6 +81,12 @@ struct Snapshot {
     directory: PathBuf,
 }
 
+enum IndexedEntry<'a> {
+    Directory,
+    Manifest,
+    Payload(&'a str),
+}
+
 /// Read one file under the current index identity. Sync its metadata in this same
 /// transaction so the detail, search fields and optimistic base describe the same bytes.
 fn current_manifest(tx: &Transaction<'_>, root: &Path, id: &str) -> Result<Option<Snapshot>, IndexError> {
@@ -242,20 +248,46 @@ impl Index {
 
     /// Resolve a directory from its cached asset ID, using the caller's active root as the boundary.
     pub fn asset_directory(&self, root: &Path, id: &str) -> Result<Option<PathBuf>, IndexError> {
-        self.indexed_path(root, id, None)
+        self.indexed_path(root, id, IndexedEntry::Directory)
     }
 
     pub fn manifest_path(&self, root: &Path, id: &str) -> Result<Option<PathBuf>, IndexError> {
-        self.indexed_path(root, id, Some(MANIFEST))
+        self.indexed_path(root, id, IndexedEntry::Manifest)
     }
 
-    fn indexed_path(&self, root: &Path, id: &str, file: Option<&str>) -> Result<Option<PathBuf>, IndexError> {
+    /// Parent directory of a payload owned by this asset in the active index.
+    pub fn payload_directory(&self, root: &Path, id: &str, rel: &str) -> Result<Option<PathBuf>, IndexError> {
+        Ok(self
+            .indexed_path(root, id, IndexedEntry::Payload(rel))?
+            .map(|mut file| {
+                file.pop();
+                file
+            }))
+    }
+
+    fn indexed_path(
+        &self,
+        root: &Path,
+        id: &str,
+        entry: IndexedEntry<'_>,
+    ) -> Result<Option<PathBuf>, IndexError> {
         let tx = self.conn.unchecked_transaction()?;
         let root = active_root(&tx, root)?;
+        let (file, payload) = match entry {
+            IndexedEntry::Directory => (None, None),
+            IndexedEntry::Manifest => (Some(MANIFEST), None),
+            IndexedEntry::Payload(rel) => {
+                check_rel(rel).map_err(|e| IndexError::Invalid(e.to_string()))?;
+                (Some(rel), Some(rel))
+            }
+        };
         let row: Option<(String, String)> = tx
-            .query_row("SELECT rel_dir,type FROM assets WHERE id=?", [id], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+            .query_row(
+                "SELECT rel_dir,type FROM assets WHERE id=?1
+                AND (?2 IS NULL OR EXISTS(SELECT 1 FROM files WHERE asset_id=?1 AND rel=?2))",
+                params![id, payload],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .optional()?;
         let Some((dir, ty)) = row else {
             return Ok(None);

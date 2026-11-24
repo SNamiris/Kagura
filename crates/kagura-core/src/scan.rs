@@ -91,13 +91,13 @@ impl ScanReport {
 }
 
 #[cfg(windows)]
-pub(crate) fn is_reparse(metadata: &fs::Metadata) -> bool {
+pub fn is_reparse(metadata: &fs::Metadata) -> bool {
     use std::os::windows::fs::MetadataExt;
     metadata.file_attributes() & 0x400 != 0
 }
 
 #[cfg(not(windows))]
-pub(crate) fn is_reparse(metadata: &fs::Metadata) -> bool {
+pub fn is_reparse(metadata: &fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 

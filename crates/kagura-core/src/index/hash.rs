@@ -1,6 +1,9 @@
 //! 按需计算资产文件的 BLAKE3。缓存有效性与增量扫描共用 size 和纳秒 mtime。
-use std::fs::Metadata;
+mod parallel;
+pub use parallel::{HashJobProgress, DEFAULT_HASH_THREADS};
+
 use std::path::{Path, PathBuf};
+use std::{fs::Metadata, io::Read};
 
 use rusqlite::{params, OptionalExtension};
 
@@ -30,10 +33,12 @@ struct IndexedFile {
     cached: bool,
 }
 
-struct DigestUpdate {
-    old: IndexedFile,
-    size: i64,
-    mtime: i64,
+struct DigestUpdate<'a> {
+    id: &'a str,
+    dir: &'a str,
+    rel: &'a str,
+    old_stamp: (i64, i64),
+    new_stamp: (i64, i64),
     digest: String,
 }
 
@@ -48,6 +53,78 @@ fn checked_path(root: &Path, dir: &str, rel: &str) -> Result<(PathBuf, Metadata)
 fn stamp(metadata: &Metadata) -> Result<(i64, i64), IndexError> {
     let size = i64::try_from(metadata.len()).map_err(|_| invalid("文件大小超出 SQLite 整数范围"))?;
     Ok((size, mtime_ns(metadata)?))
+}
+
+const BUFFER_SIZE: usize = 256 * 1024;
+
+fn read_digest(
+    path: &Path,
+    before: (i64, i64),
+    buffer: &mut [u8],
+    keep_reading: &impl Fn() -> bool,
+    mut read_bytes: impl FnMut(u64),
+) -> Result<Option<String>, IndexError> {
+    let mut file = open_input(path)?;
+    let opened = file.metadata()?;
+    if is_reparse(&opened) || !opened.is_file() || stamp(&opened)? != before {
+        return Err(invalid(format!("开始哈希前文件已改变：{}", path.display())));
+    }
+    let mut hasher = blake3::Hasher::new();
+    while keep_reading() {
+        let n = file.read(buffer)?;
+        if n == 0 {
+            if hasher.count() != opened.len() || stamp(&file.metadata()?)? != before {
+                return Err(invalid(format!("计算哈希时文件已改变：{}", path.display())));
+            }
+            return Ok(Some(hasher.finalize().to_hex().to_string()));
+        }
+        hasher.update(&buffer[..n]);
+        read_bytes(n as u64);
+    }
+    Ok(None)
+}
+
+fn store_digests(
+    db: &mut rusqlite::Connection,
+    root: &str,
+    updates: &[DigestUpdate<'_>],
+) -> Result<(), IndexError> {
+    if updates.is_empty() {
+        return Ok(());
+    }
+    for update in updates {
+        let (path, current) = checked_path(Path::new(root), update.dir, update.rel)?;
+        if stamp(&current)? != update.new_stamp {
+            return Err(invalid(format!("写入哈希缓存前文件已改变：{}", path.display())));
+        }
+    }
+    let tx = db.transaction()?;
+    {
+        let mut write = tx.prepare_cached(
+            "UPDATE files SET size=?1, mtime=?2, blake3=?3
+             WHERE asset_id=?4 AND rel=?5 AND size=?6 AND mtime=?7
+             AND EXISTS (SELECT 1 FROM assets WHERE id=?4 AND rel_dir=?8)
+             AND EXISTS (SELECT 1 FROM meta WHERE id=1 AND root=?9)",
+        )?;
+        for u in updates {
+            if write.execute(params![
+                u.new_stamp.0,
+                u.new_stamp.1,
+                u.digest,
+                u.id,
+                u.rel,
+                u.old_stamp.0,
+                u.old_stamp.1,
+                u.dir,
+                root
+            ])? != 1
+            {
+                return Err(invalid(format!("索引在哈希期间已改变：{}/{}", u.dir, u.rel)));
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 impl Index {
@@ -125,7 +202,8 @@ impl Index {
 
         let mut updates = Vec::new();
         let mut report = HashReport::default();
-        for indexed in files {
+        let mut buffer = vec![0; BUFFER_SIZE];
+        for indexed in &files {
             let (path, meta) = checked_path(Path::new(root), &dir, &indexed.rel)?;
             let before = stamp(&meta)?;
             if indexed.cached && before == (indexed.size, indexed.mtime) {
@@ -133,63 +211,25 @@ impl Index {
                 progress(&indexed.rel);
                 continue;
             }
-            let mut file = open_input(&path)?;
-            let opened = file.metadata()?;
-            if is_reparse(&opened) || !opened.is_file() || stamp(&opened)? != before {
-                return Err(invalid(format!("开始哈希前文件已改变：{}", path.display())));
-            }
-            let mut hasher = blake3::Hasher::new();
-            hasher.update_reader(&mut file)?;
-            let bytes = hasher.count();
+            let digest =
+                read_digest(&path, before, &mut buffer, &|| true, |_| {})?.expect("uninterrupted read");
             let (_, current) = checked_path(Path::new(root), &dir, &indexed.rel)?;
-            if bytes != meta.len() || stamp(&file.metadata()?)? != before || stamp(&current)? != before {
+            if stamp(&current)? != before {
                 return Err(invalid(format!("计算哈希时文件已改变：{}", path.display())));
             }
             report.hashed_files += 1;
-            report.bytes_hashed += bytes;
+            report.bytes_hashed += meta.len();
             progress(&indexed.rel);
             updates.push(DigestUpdate {
-                old: indexed,
-                size: before.0,
-                mtime: before.1,
-                digest: hasher.finalize().to_hex().to_string(),
+                id,
+                dir: &dir,
+                rel: &indexed.rel,
+                old_stamp: (indexed.size, indexed.mtime),
+                new_stamp: before,
+                digest,
             });
         }
-        if !updates.is_empty() {
-            // Earlier files can change while the remaining files of this asset are read.
-            for update in &updates {
-                let (path, current) = checked_path(Path::new(root), &dir, &update.old.rel)?;
-                if stamp(&current)? != (update.size, update.mtime) {
-                    return Err(invalid(format!("写入哈希缓存前文件已改变：{}", path.display())));
-                }
-            }
-            let tx = self.conn.transaction()?;
-            {
-                let mut write = tx.prepare_cached(
-                    "UPDATE files SET size=?1, mtime=?2, blake3=?3
-                     WHERE asset_id=?4 AND rel=?5 AND size=?6 AND mtime=?7
-                     AND EXISTS (SELECT 1 FROM assets WHERE id=?4 AND rel_dir=?8)
-                     AND EXISTS (SELECT 1 FROM meta WHERE id=1 AND root=?9)",
-                )?;
-                for update in updates {
-                    let changed = write.execute(params![
-                        update.size,
-                        update.mtime,
-                        update.digest,
-                        id,
-                        update.old.rel,
-                        update.old.size,
-                        update.old.mtime,
-                        dir,
-                        root
-                    ])?;
-                    if changed != 1 {
-                        return Err(invalid(format!("索引在哈希期间已改变：{dir}/{}", update.old.rel)));
-                    }
-                }
-            }
-            tx.commit()?;
-        }
+        store_digests(&mut self.conn, root, &updates)?;
         Ok(report)
     }
 }
