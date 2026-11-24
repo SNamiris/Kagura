@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
 use rusqlite::{params_from_iter, OptionalExtension, Row};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{Index, IndexError};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
 pub struct AssetSummary {
     pub id: String,
     pub asset_type: String,
@@ -19,16 +20,20 @@ pub struct AssetSummary {
     pub edition: Option<String>,
     pub part: Option<String>,
     pub suffix: Option<String>,
+    #[cfg_attr(feature = "bindings", ts(type = "number | null"))]
     pub rating: Option<i64>,
     pub added: Option<String>,
     pub updated: Option<String>,
+    /// A verified image inside the active library. Filled by load_previews for desktop views.
+    pub preview_path: Option<String>,
 }
 
-const SUMMARY_COLUMNS: &str = "a.id, a.type, a.kind, a.rel_dir, a.author, a.name, a.title, a.composer,
+pub(super) const SUMMARY_COLUMNS: &str =
+    "a.id, a.type, a.kind, a.rel_dir, a.author, a.name, a.title, a.composer,
                                a.edition, a.part, a.suffix, a.rating, a.added, a.updated";
 
 impl AssetSummary {
-    fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+    pub(super) fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             id: row.get("id")?,
             asset_type: row.get("type")?,
@@ -44,11 +49,14 @@ impl AssetSummary {
             rating: row.get("rating")?,
             added: row.get("added")?,
             updated: row.get("updated")?,
+            preview_path: None,
         })
     }
 }
 
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 pub enum Sort {
     #[default]
     Name,
@@ -57,7 +65,9 @@ pub enum Sort {
     Rating,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
 pub enum Missing {
     Any,
     Author,
@@ -65,19 +75,45 @@ pub enum Missing {
     License,
 }
 
-#[derive(Debug, Clone, Default)]
+impl Missing {
+    fn predicate(self) -> &'static str {
+        match self {
+            Self::Any => "(a.author = '_Unknown' OR a.composer = '_Unknown' OR a.license_explicit = 0)",
+            Self::Author => "a.author = '_Unknown'",
+            Self::Composer => "a.composer = '_Unknown'",
+            Self::License => "a.license_explicit = 0",
+        }
+    }
+}
+
+fn literal_contains(value: &str) -> String {
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
+#[serde(default)]
 pub struct SearchFilters {
     pub asset_type: Option<String>,
     pub kind: Option<String>,
     pub author: Option<String>,
     pub tag: Option<String>,
     pub missing: Option<Missing>,
+    pub types: Vec<String>,
+    pub kinds: Vec<String>,
+    pub author_contains: Option<String>,
+    pub missing_any: Vec<Missing>,
     pub sort: Sort,
     /// None sorts names ascending, dates and ratings descending.
     pub descending: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
 pub struct SearchPage {
     pub total: usize,
     pub items: Vec<AssetSummary>,
@@ -86,6 +122,7 @@ pub struct SearchPage {
 }
 
 #[derive(Debug, Default, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
 pub struct IndexStats {
     pub counts: BTreeMap<String, usize>,
     pub unknown_author: BTreeMap<String, usize>,
@@ -129,11 +166,7 @@ impl Index {
         if !query.is_empty() {
             from.push_str(" JOIN assets_fts ON assets_fts.rowid = a.rowid");
             if used_like {
-                let escaped = query
-                    .replace('\\', "\\\\")
-                    .replace('%', "\\%")
-                    .replace('_', "\\_");
-                values.push(format!("%{escaped}%"));
+                values.push(literal_contains(query));
                 let matches = SEARCH_FIELDS.map(|field| format!("assets_fts.{field} LIKE ?1 ESCAPE '\\'"));
                 predicates.push(format!("({})", matches.join(" OR ")));
             } else {
@@ -155,16 +188,26 @@ impl Index {
                 values.push(value.clone());
             }
         }
+        for (column, selected) in [("a.type", &filters.types), ("a.kind", &filters.kinds)] {
+            if !selected.is_empty() {
+                predicates.push(format!("{column} IN (SELECT value FROM json_each(?))"));
+                values.push(serde_json::to_string(selected)?);
+            }
+        }
+        if let Some(author) = filters.author_contains.as_deref().filter(|s| !s.is_empty()) {
+            predicates.push("a.author LIKE ? ESCAPE '\\'".into());
+            values.push(literal_contains(author));
+        }
         if let Some(missing) = filters.missing {
-            let predicate = match missing {
-                Missing::Any => {
-                    "(a.author = '_Unknown' OR a.composer = '_Unknown' OR a.license_explicit = 0)"
-                }
-                Missing::Author => "a.author = '_Unknown'",
-                Missing::Composer => "a.composer = '_Unknown'",
-                Missing::License => "a.license_explicit = 0",
-            };
-            predicates.push(predicate.into());
+            predicates.push(missing.predicate().into());
+        }
+        if !filters.missing_any.is_empty() {
+            let terms: Vec<_> = filters
+                .missing_any
+                .iter()
+                .map(|missing| missing.predicate())
+                .collect();
+            predicates.push(format!("({})", terms.join(" OR ")));
         }
         if !predicates.is_empty() {
             from.push_str(" WHERE ");

@@ -16,6 +16,7 @@ use crate::naming::utf16_len;
 use crate::scan::{is_reparse, Record, ScanReport};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Check {
     IdUnique,
@@ -30,6 +31,7 @@ pub enum Check {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
 pub struct Finding {
     pub check: Check,
     /// POSIX path relative to the supplied root.
@@ -38,6 +40,7 @@ pub struct Finding {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
 pub struct CheckReport {
     pub counts: BTreeMap<String, usize>,
     pub check_counts: BTreeMap<Check, usize>,

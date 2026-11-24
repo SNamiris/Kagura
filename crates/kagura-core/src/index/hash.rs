@@ -1,7 +1,7 @@
 //! 按需计算资产文件的 BLAKE3。缓存有效性与增量扫描共用 size 和纳秒 mtime。
-use std::fs::{self, File, Metadata, OpenOptions};
+use std::fs::{File, Metadata, OpenOptions};
 use std::io;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use rusqlite::{params, OptionalExtension};
 
@@ -43,25 +43,7 @@ fn invalid(msg: impl Into<String>) -> IndexError {
 }
 
 fn checked_path(root: &Path, dir: &str, rel: &str) -> Result<(PathBuf, Metadata), IndexError> {
-    if !dir.starts_with("Library/") || rel.is_empty() {
-        return Err(invalid(format!("无效的索引文件路径：{dir}/{rel}")));
-    }
-    let mut path = root.to_owned();
-    let mut metadata = fs::symlink_metadata(&path)?;
-    for component in Path::new(dir).components().chain(Path::new(rel).components()) {
-        if is_reparse(&metadata) || !metadata.is_dir() {
-            return Err(invalid(format!("索引目录已改变：{}", path.display())));
-        }
-        let Component::Normal(name) = component else {
-            return Err(invalid(format!("无效的索引文件路径：{dir}/{rel}")));
-        };
-        path.push(name);
-        metadata = fs::symlink_metadata(&path)?;
-    }
-    if is_reparse(&metadata) || !metadata.is_file() {
-        return Err(invalid(format!("索引路径不是常规文件：{}", path.display())));
-    }
-    Ok((path, metadata))
+    super::paths::checked_entry(root, dir, Some(rel))
 }
 
 fn stamp(metadata: &Metadata) -> Result<(i64, i64), IndexError> {

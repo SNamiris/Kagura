@@ -6,14 +6,19 @@ rust-version.workspace = true
 license.workspace = true
 description = "Kagura 资产库核心：命名、路径、manifest、schema 校验"
 
+[features]
+bindings = ["dep:ts-rs"]
+
 [dependencies]
 blake3 = "1.8.7"
+dunce = "1"
 rusqlite = { version = "0.43.0", features = ["bundled"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 jsonschema.workspace = true
 unicase = "2"
+ts-rs = { version = "12.0.1", optional = true, features = ["serde-json-impl"] }
 
 [dev-dependencies]
 sha2 = "0.10"

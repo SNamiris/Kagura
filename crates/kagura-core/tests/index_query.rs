@@ -173,3 +173,99 @@ fn missing_stats_children_stable_sort_and_pagination() {
     assert_eq!(empty_page.total, 5);
     assert!(empty_page.items.is_empty());
 }
+
+#[test]
+fn desktop_filters_combine_multiselects_and_escape_author_input() {
+    let temp = tempfile::tempdir().unwrap();
+    let index = populate(temp.path());
+    let filters = SearchFilters {
+        types: vec!["model".into(), "stage".into()],
+        kinds: vec!["prop".into(), "stage".into()],
+        ..Default::default()
+    };
+    assert_eq!(index.search("", &filters, 2, 0).unwrap().total, 2);
+    let author = SearchFilters {
+        author_contains: Some("uil".into()),
+        ..filters.clone()
+    };
+    assert_eq!(index.search("shared", &author, 10, 0).unwrap().items[0].id, MODEL);
+    let unknown = SearchFilters {
+        author_contains: Some("_".into()),
+        ..filters.clone()
+    };
+    assert_eq!(index.search("", &unknown, 10, 0).unwrap().total, 1);
+    let literal = SearchFilters {
+        author_contains: Some("%".into()),
+        ..filters
+    };
+    assert_eq!(index.search("", &literal, 10, 0).unwrap().total, 0);
+    let missing = SearchFilters {
+        missing_any: vec![Missing::Author, Missing::Composer],
+        ..Default::default()
+    };
+    assert_eq!(index.search("", &missing, 10, 0).unwrap().total, 2);
+}
+
+#[test]
+fn desktop_detail_and_previews_use_only_the_active_assets_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut index = populate(temp.path());
+    let root = temp.path().join("mmd");
+    let model = root.join("Library/Models/Props/Builder/Box");
+    let song = root.join("Library/Motions/Beat(Live)__Unknown");
+    fs::create_dir_all(song.join("_AuDiO")).unwrap();
+    fs::write(song.join("_AuDiO/take.wav"), b"sound").unwrap();
+    fs::create_dir_all(model.join("media")).unwrap();
+    for rel in ["preview.png", "media/view.webp", "media/manual.txt"] {
+        fs::write(model.join(rel), rel).unwrap();
+    }
+    let mut manifest = index.get(MODEL).unwrap().unwrap();
+    manifest["preview"] = json!(["media/manual.txt", "media/missing.jpg", "media/view.webp"]);
+    fs::write(model.join(MANIFEST), serde_json::to_vec(&manifest).unwrap()).unwrap();
+    index.update(&root).unwrap();
+    let song_detail = index.asset_detail(&root, SONG).unwrap().unwrap();
+    assert_eq!((song_detail.file_count, song_detail.total_bytes), (1, 5));
+    assert_eq!(song_detail.audio_files, ["_AuDiO/take.wav"]);
+    assert_eq!(song_detail.outgoing[0].id, MOTION);
+    assert_eq!(song_detail.outgoing[0].field, "sets[0].motion[0]");
+    assert_eq!(song_detail.incoming[0].id, MOTION);
+    assert_eq!(song_detail.incoming[0].field, "song");
+    assert!(index.asset_directory(&root, "../../outside").unwrap().is_none());
+    assert!(index.asset_directory(temp.path(), MODEL).is_err());
+    let folder = index.asset_directory(&root, MODEL).unwrap().unwrap();
+    assert_eq!(folder.canonicalize().unwrap(), model.canonicalize().unwrap());
+
+    let mut items = index
+        .search("Box", &SearchFilters::default(), 20, 0)
+        .unwrap()
+        .items;
+    index.load_previews(&root, &mut items).unwrap();
+    assert!(Path::new(items[0].preview_path.as_ref().unwrap()).ends_with("media/view.webp"));
+    fs::remove_file(model.join("media/view.webp")).unwrap();
+    index.load_previews(&root, &mut items).unwrap();
+    assert!(Path::new(items[0].preview_path.as_ref().unwrap()).ends_with("preview.png"));
+    fs::remove_file(model.join("preview.png")).unwrap();
+    index.load_previews(&root, &mut items).unwrap();
+    assert!(items[0].preview_path.is_none());
+
+    // An asset directory can be replaced between scanning and clicking a card.
+    // Neither opening the folder nor its previously indexed preview may follow the link.
+    let outside = temp.path().join("outside");
+    fs::rename(&model, &outside).unwrap();
+    fs::write(outside.join("preview.png"), b"outside").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&outside, &model).unwrap();
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/d", "/c", "mklink", "/J"])
+            .arg(&folder)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+    }
+    assert!(index.asset_directory(&root, MODEL).is_err());
+    index.load_previews(&root, &mut items).unwrap();
+    assert!(items[0].preview_path.is_none());
+}

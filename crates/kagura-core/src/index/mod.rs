@@ -1,6 +1,8 @@
 //! Rebuildable SQLite search cache. Source library files are only ever opened for reading.
 
+mod detail;
 mod hash;
+mod paths;
 mod query;
 mod store;
 
@@ -13,6 +15,7 @@ use rusqlite::{Connection, TransactionBehavior};
 use thiserror::Error;
 
 use crate::scan::ScanReport;
+pub use detail::{AssetDetail, AssetRef, LibraryMeta};
 pub use hash::{HashProgress, HashReport};
 pub use query::{AssetSummary, IndexStats, Missing, SearchFilters, SearchPage, Sort};
 
@@ -31,7 +34,8 @@ pub enum IndexError {
     Invalid(String),
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
 pub struct IndexChanges {
     pub inserted: usize,
     pub updated: usize,

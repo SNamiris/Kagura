@@ -1,131 +1,114 @@
-import { useEffect, useRef, useState } from 'react'
-import { invoke, isTauri } from '@tauri-apps/api/core'
-import { useVirtualizer } from '@tanstack/react-virtual'
-import type { CoreStatus as CoreStatusResult } from './generated/CoreStatus'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { isTauri } from '@tauri-apps/api/core'
+import { Activity, Disc3, FolderOpen, LibraryBig, RefreshCw, Search, ShieldCheck, SlidersHorizontal, X } from 'lucide-react'
+import { api, errorText } from './api'
+import { Catalog } from './Catalog'
+import { CheckDialog } from './CheckDialog'
+import { Details } from './Details'
+import { Sidebar } from './Sidebar'
+import { defaultSort, emptyFilters, number } from './presentation'
+import type { LibraryStats } from './generated/LibraryStats'
 import './App.css'
 
-const itemCount = 10_000
-const cardWidth = 220
-const gap = 12
-const rowHeight = 118
-
-const samples = [
-  { type: '模型', format: 'PMX', name: '纸灯笼', color: 'model' },
-  { type: '场景', format: 'PMX', name: '雨后站台', color: 'stage' },
-  { type: '动作', format: 'VMD', name: '回身步', color: 'motion' },
-  { type: '歌曲', format: 'WAV', name: '月下练习曲', color: 'song' },
-  { type: '场景', format: 'PMX', name: '午后庭院', color: 'stage' },
-  { type: '动作', format: 'VMD', name: '挥袖', color: 'motion' },
-  { type: '歌曲', format: 'WAV', name: '山间小调', color: 'song' },
-  { type: '模型', format: 'PMX', name: '油纸伞', color: 'model' },
-] as const
-
-function CoreStatus() {
-  const desktop = isTauri()
-  const [status, setStatus] = useState({ state: 'pending', text: '正在连接核心库…' })
+export default function App() {
+  const [library, setLibrary] = useState<LibraryStats>()
+  const [busy, setBusy] = useState<'open' | 'rescan' | 'choose' | null>(isTauri() ? 'open' : null)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [input, setInput] = useState('')
+  const [query, setQuery] = useState('')
+  const [filters, setFilters] = useState(emptyFilters)
+  const [sort, setSort] = useState(defaultSort)
+  const [view, setView] = useState<'grid' | 'list'>('grid')
+  const [revision, setRevision] = useState(0)
+  const [history, setHistory] = useState<string[]>([])
+  const [checking, setChecking] = useState(false)
+  const [filtersVisible, setFiltersVisible] = useState(false)
+  const searchBox = useRef<HTMLInputElement>(null)
+  const selected = history.at(-1) ?? null
+  const clearDetails = useCallback(() => setHistory([]), [])
 
   useEffect(() => {
-    if (!desktop) return
+    if (!isTauri()) return
     let active = true
-    invoke<CoreStatusResult>('core_status').then(
-      (text) => { if (active) setStatus({ state: 'ready', text }) },
-      (error: unknown) => {
-        if (active) setStatus({ state: 'error', text: `核心连接失败：${String(error)}` })
-      },
-    )
+    api.settings().then(async settings => {
+      if (!active || !settings.root) return
+      const stats = await api.open(settings.root)
+      if (active) setLibrary(stats)
+    }).catch((e: unknown) => { if (active) setError(errorText(e)) })
+      .finally(() => { if (active) setBusy(null) })
     return () => { active = false }
-  }, [desktop])
-
-  return (
-    <p className="core-status" data-state={desktop ? status.state : 'browser'} role="status">
-      <span className="status-dot" aria-hidden="true" />
-      {desktop ? status.text : '浏览器预览 · 请在桌面窗口查看核心状态'}
-    </p>
-  )
-}
-
-function App() {
-  const viewport = useRef<HTMLDivElement>(null)
-  const [columns, setColumns] = useState(1)
-
-  useEffect(() => {
-    const element = viewport.current
-    if (!element) return
-    const resize = (width: number) => setColumns(Math.max(1, Math.floor((width + gap) / (cardWidth + gap))))
-    const observer = new ResizeObserver(([entry]) => resize(entry.contentRect.width))
-    observer.observe(element)
-    return () => observer.disconnect()
   }, [])
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(input.trim()), 200)
+    return () => clearTimeout(timer)
+  }, [input])
+  useEffect(() => {
+    const keys = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && !checking) {
+        event.preventDefault()
+        searchBox.current?.focus()
+        searchBox.current?.select()
+      } else if (event.key === 'Escape' && !checking) {
+        clearDetails()
+        setFiltersVisible(false)
+      }
+    }
+    window.addEventListener('keydown', keys)
+    return () => window.removeEventListener('keydown', keys)
+  }, [checking, clearDetails])
 
-  const rowCount = Math.ceil(itemCount / columns)
-  // Keep the mutable virtualizer in this component so scrolling always reads the current rows.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const rows = useVirtualizer({
-    count: rowCount,
-    getScrollElement: () => viewport.current,
-    estimateSize: () => rowHeight,
-    overscan: 3,
-  })
+  async function choose() {
+    setError('')
+    setMessage('')
+    setBusy('choose')
+    try {
+      const selection = await api.choose()
+      if (!selection.root) return
+      setBusy('open')
+      const stats = await api.open(selection.root)
+      setLibrary(stats)
+      setInput(''); setQuery(''); setFilters(emptyFilters); clearDetails(); setFiltersVisible(false)
+      setRevision(n => n + 1)
+    } catch (e: unknown) { setError(errorText(e)) } finally { setBusy(null) }
+  }
+  async function rescan() {
+    setError(''); setBusy('rescan'); setMessage('')
+    try {
+      const changes = await api.rescan()
+      setLibrary(await api.stats())
+      setRevision(n => n + 1)
+      const changed = changes.inserted || changes.updated || changes.deleted || changes.files_changed || changes.files_deleted
+      setMessage(changed ? `新增 ${changes.inserted}，更新 ${changes.updated}，移除 ${changes.deleted}，文件变更 ${changes.files_changed}，文件移除 ${changes.files_deleted}` : '重新扫描完成，资产库无变化')
+    } catch (e: unknown) { setError(errorText(e)) } finally { setBusy(null) }
+  }
+  const follow = (id: string) => setHistory(old => old.at(-1) === id ? old : [...old, id])
+  const loading = busy === 'open' ? '正在打开资产库并更新索引…' : busy === 'rescan' ? '正在扫描资产库…' : '正在选择库文件夹…'
 
-  return (
-    <main className="library">
-      <header className="masthead">
-        <span className="brand" lang="en">Kagura</span>
-        <CoreStatus />
-      </header>
-      <div className="catalog">
-        <div className="catalog-head">
-          <div>
-            <h1 id="catalog-title">模拟资产库</h1>
-            <p className="item-count">10,000 个样本</p>
-          </div>
-          <div className="scroll-controls" role="group" aria-label="网格定位">
-            <button type="button" onClick={() => rows.scrollToIndex(0, { align: 'start' })}>跳至开头</button>
-            <button type="button" onClick={() => rows.scrollToIndex(rowCount - 1, { align: 'end' })}>跳至末尾</button>
-          </div>
-        </div>
-        <div className="viewport" ref={viewport} role="region" aria-labelledby="catalog-title" tabIndex={0}>
-          <div className="virtual-list" role="list" aria-label="模拟资产条目" style={{ height: rows.getTotalSize() }}>
-            {rows.getVirtualItems().map((row) => {
-              const first = row.index * columns
-              const count = Math.min(columns, itemCount - first)
-              return (
-                <div
-                  className="virtual-row"
-                  key={row.key}
-                  role="presentation"
-                  style={{
-                    gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-                    transform: `translateY(${row.start}px)`,
-                    height: row.size,
-                    gap,
-                    paddingBottom: gap,
-                  }}
-                >
-                  {Array.from({ length: count }, (_, offset) => {
-                    const index = first + offset
-                    const sample = samples[index % samples.length]
-                    const number = String(index + 1).padStart(5, '0')
-                    return (
-                      <div className="asset-card" data-category={sample.color} key={index} role="listitem"
-                        aria-posinset={index + 1} aria-setsize={itemCount}>
-                        <span className="format-tag">{sample.format}</span>
-                        <div className="asset-copy">
-                          <span className="asset-type">{sample.type}</span>
-                          <strong>{sample.name}</strong>
-                          <span className="asset-id">#{number}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-    </main>
-  )
+  return <main className={'library-app' + (filtersVisible ? ' filters-open' : '') + (selected ? ' has-detail' : '')}>
+    <header className="topbar">
+      <div className="brand"><span className="brand-mark"><Disc3 size={24} strokeWidth={1.65}/></span><span lang="en">Kagura</span></div>
+      {library && <><div className="search-box"><Search size={17}/><input aria-label="搜索资产" placeholder="搜索资产、作者、标签…" value={input} onChange={e => setInput(e.target.value)} ref={searchBox}/>
+        {input ? <button className="icon-button" aria-label="清空搜索" onClick={() => { setInput(''); searchBox.current?.focus() }}><X size={14}/></button> : <kbd>Ctrl K</kbd>}</div>
+        <div className="top-actions"><button onClick={() => setChecking(true)} disabled={!!busy}><ShieldCheck size={16}/>库检查</button>
+          <button onClick={() => void rescan()} disabled={!!busy}><RefreshCw size={15}/>重新扫描</button>
+          <button className="mobile-filter icon-button" aria-label="显示筛选" aria-pressed={filtersVisible} onClick={() => setFiltersVisible(v => !v)}><SlidersHorizontal size={16}/></button></div></>}
+    </header>
+    {(error || (library && (busy || message))) && <div className={error ? 'app-notice error-box' : 'app-notice'} role={error ? 'alert' : 'status'}>
+      {busy && <span className="spinner"/>}<span data-testid={busy ? 'library-busy' : undefined}>{error || (busy ? loading : message)}</span>
+      {!busy && <button className="icon-button" aria-label="关闭提示" onClick={() => { setError(''); setMessage('') }}><X size={14}/></button>}</div>}
+    {library ? <div className="workspace">
+      <Sidebar stats={library} filters={filters} onChange={setFilters} choose={() => void choose()} busy={!!busy}/>
+      <Catalog key={JSON.stringify([query, filters, sort, revision])} query={query} filters={filters} sort={sort} setSort={setSort}
+        view={view} setView={setView} selected={selected} open={id => { setHistory([id]); setFiltersVisible(false) }}/>
+      {selected && <Details key={selected + ':' + revision} id={selected} close={clearDetails} follow={follow}
+        back={history.length > 1 ? () => setHistory(old => old.slice(0, -1)) : undefined}/>}
+    </div> : <section className="welcome"><div className="welcome-inner"><span className="welcome-icon"><LibraryBig size={36} strokeWidth={1.4}/></span>
+      <h1>打开资产库</h1><p>{isTauri() ? '选择包含 Library 文件夹的库根目录。' : '请在 Kagura 桌面窗口中打开本地资产库。'}</p>
+      {busy ? <p className="loading" role="status" data-testid="library-busy"><span className="spinner"/>{loading}</p>
+        : <button className="primary" disabled={!isTauri()} onClick={() => void choose()}><FolderOpen size={17}/>选择库文件夹</button>}</div></section>}
+    <footer className="statusbar"><span title={library?.root}><FolderOpen size={13}/>{library?.root ?? '尚未连接资产库'}</span>
+      {library && <><span>{number(library.total)} 份资产</span><span><Activity size={13}/>上次扫描 {new Date(library.last_scan * 1000).toLocaleString('zh-CN',{hour12:false})}</span></>}</footer>
+    {checking && <CheckDialog close={() => setChecking(false)}/>}
+  </main>
 }
-
-export default App
