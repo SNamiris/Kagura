@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, ArrowUpRight, ChevronRight, FileAudio, FolderOpen, X } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, ChevronRight, FileAudio, FolderOpen, Pencil, X } from 'lucide-react'
 import { api, errorText } from './api'
 import { assetName, kinds, number, partName, person, size, typeOf } from './presentation'
 import type { AssetDetail } from './generated/AssetDetail'
 import type { AssetRef } from './generated/AssetRef'
 import type { AssetSummary } from './generated/AssetSummary'
+import { AssetEditor, type EditStatus } from './AssetEditor'
 
 const labels: Record<string, string> = {
   author: '作者', name: '名称', name_original: '原名', title: '曲名', composer: '作曲者', edition: '版本', suffix: '后缀', part: '类别',
@@ -39,12 +40,16 @@ function ReferenceLinks({ title, refs, follow }: { title: string, refs: AssetRef
       <span>{ref.name || ref.id}<small>{ref.field}</small></span><ArrowUpRight size={14}/></button>)}</section>
 }
 
-export function Details({ id, close, follow, back }: { id: string, close: () => void, follow: (id: string) => void, back?: () => void }) {
+export function Details({ id, close, follow, back, guard, onStatus, saved, canEdit }: {
+  id: string, close: () => void, follow: (id: string) => void, back?: () => void,
+  guard: (action: () => void) => void, onStatus: (status: EditStatus) => void, saved: () => void, canEdit: boolean,
+}) {
   const [detail, setDetail] = useState<AssetDetail>()
   const [children, setChildren] = useState<AssetSummary[]>()
   const [rawOpen, setRawOpen] = useState(false)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [editing, setEditing] = useState(false)
   useEffect(() => {
     let active = true
     api.asset(id).then(async data => {
@@ -78,10 +83,14 @@ export function Details({ id, close, follow, back }: { id: string, close: () => 
   const extra = Object.fromEntries(['name_original', 'character', 'series','added','updated'].filter(k => manifest[k] != null).map(k => [k, manifest[k]]))
 
   return <aside className="details" aria-label="资产详情">
-    <div className="panel-heading"><h2>资产详情</h2><div>
+    <div className="panel-heading"><h2>{editing ? '编辑资产' : '资产详情'}</h2><div>
+      {detail && !editing && <button className="edit-trigger" disabled={!canEdit} onClick={() => setEditing(true)}><Pencil size={14}/>编辑</button>}
       {back && <button className="icon-button" aria-label="返回上一资产" title="返回上一资产" onClick={back}><ArrowLeft size={16}/></button>}
       <button className="icon-button" aria-label="关闭详情" title="关闭详情" onClick={close}><X size={17}/></button></div></div>
-    <div className="detail-scroll">
+    {editing && detail ? <AssetEditor detail={detail} onStatus={onStatus} saved={saved}
+      cancel={() => guard(() => setEditing(false))}
+      reload={() => { setDetail(undefined); setError(''); setChildren(undefined); setAttempt(n => n + 1) }}/>
+      : <div className="detail-scroll">
       {error && <div className="error-box" role="alert">{error}<button onClick={() => { setError(''); setAttempt(n => n + 1) }}>重新载入详情</button></div>}
       {!detail && !error && <p role="status">正在读取资产…</p>}
       {asset && detail && <>
@@ -93,7 +102,7 @@ export function Details({ id, close, follow, back }: { id: string, close: () => 
         <section className="detail-section"><h3>基本信息</h3><dl className="fields">
           <div><dt>ID</dt><dd className="asset-id">{asset.id}</dd></div>
           {asset.kind && <div><dt>类别</dt><dd>{kinds.find(k => k.value === asset.kind)?.label ?? asset.kind}</dd></div>}
-          <div><dt>评分</dt><dd>{asset.rating == null ? '未评分' : `${asset.rating} / 5`}</dd></div>
+          <div><dt>评分</dt><dd>{asset.rating ? `${asset.rating} / 5` : '未评分'}</dd></div>
           <div><dt>文件</dt><dd>{number(detail.file_count)} 个 · {size(detail.total_bytes)}</dd></div></dl>
           <Fields fields={extra}/></section>
         {parent.length > 0 && <ReferenceLinks title="所属歌曲" refs={parent} follow={follow}/>}
@@ -115,6 +124,6 @@ export function Details({ id, close, follow, back }: { id: string, close: () => 
         <details className="raw-manifest" onToggle={e => setRawOpen(e.currentTarget.open)}><summary>原始 manifest JSON</summary>
           {rawOpen && <pre>{JSON.stringify(detail.manifest, null, 2)}</pre>}</details>
       </>}
-    </div>
+    </div>}
   </aside>
 }

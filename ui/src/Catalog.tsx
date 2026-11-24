@@ -26,7 +26,7 @@ const AssetCard = memo(function AssetCard({ asset, selected, open }: { asset: As
     <Thumbnail asset={asset} />
     <span className="card-copy">
       <span className="card-meta"><span className="type-label">{category.label}</span>
-        <span className="rating" title={asset.rating == null ? '未评分' : `${asset.rating} / 5`}><Star size={12}/>{asset.rating ?? '—'}</span></span>
+        <span className="rating" title={asset.rating ? `${asset.rating} / 5` : '未评分'}><Star size={12}/>{asset.rating || '未评'}</span></span>
       <strong>{title}</strong><span className="card-author">{person(asset.author || asset.composer)}</span>
     </span>
   </button>

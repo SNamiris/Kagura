@@ -18,7 +18,11 @@ fn handlers<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Sen
         commands::song_children,
         commands::stats,
         commands::open_folder,
-        commands::run_check
+        commands::run_check,
+        commands::edit_asset,
+        commands::undo_edit,
+        commands::list_edits,
+        commands::suggest_tags
     ]
 }
 

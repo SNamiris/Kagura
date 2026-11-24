@@ -3,6 +3,7 @@ use std::{path::Path, sync::Mutex};
 use kagura_core::{
     check::{check_library, CheckReport},
     index::{AssetDetail, AssetSummary, IndexChanges, SearchPage},
+    txn::{EditEntry, EditPatch, EditResult},
 };
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -33,6 +34,14 @@ pub(crate) struct SongChildren(Vec<AssetSummary>);
 #[derive(Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct FolderOpened(());
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct RecentEdits(Vec<EditEntry>);
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct TagSuggestions(Vec<String>);
 
 async fn background<T: Send + 'static>(f: impl FnOnce() -> Reply<T> + Send + 'static) -> Reply<T> {
     tauri::async_runtime::spawn_blocking(f)
@@ -171,4 +180,50 @@ pub(crate) async fn open_folder<R: Runtime>(app: AppHandle<R>, id: Input<String>
 pub(crate) async fn run_check<R: Runtime>(app: AppHandle<R>) -> Reply<CheckReport> {
     let root = with_desktop(app, |desktop, _| Ok(desktop.current()?.root.clone())).await?;
     background(move || Ok(check_library(&root))).await
+}
+
+#[tauri::command]
+pub(crate) async fn edit_asset<R: Runtime>(
+    app: AppHandle<R>,
+    id: Input<String>,
+    patch: Input<EditPatch>,
+    base_hash: Input<String>,
+) -> Reply<EditResult> {
+    with_desktop(app, move |desktop, _| {
+        let lib = desktop.current()?;
+        Ok(lib.index.edit_manifest(&lib.root, &id.0, patch.0, &base_hash.0)?)
+    })
+    .await
+}
+
+#[tauri::command]
+pub(crate) async fn undo_edit<R: Runtime>(app: AppHandle<R>, entry_id: Input<String>) -> Reply<EditResult> {
+    with_desktop(app, move |desktop, _| {
+        let lib = desktop.current()?;
+        Ok(lib.index.undo_edit(&lib.root, &entry_id.0)?)
+    })
+    .await
+}
+
+#[tauri::command]
+pub(crate) async fn list_edits<R: Runtime>(app: AppHandle<R>, limit: Input<usize>) -> Reply<RecentEdits> {
+    with_desktop(app, move |desktop, _| {
+        let lib = desktop.current()?;
+        Ok(RecentEdits(lib.index.list_edits(&lib.root, limit.0)?))
+    })
+    .await
+}
+
+#[tauri::command]
+pub(crate) async fn suggest_tags<R: Runtime>(
+    app: AppHandle<R>,
+    query: Input<String>,
+    limit: Input<usize>,
+) -> Reply<TagSuggestions> {
+    with_desktop(app, move |desktop, _| {
+        Ok(TagSuggestions(
+            desktop.current()?.index.suggest_tags(&query.0, limit.0)?,
+        ))
+    })
+    .await
 }

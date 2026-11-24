@@ -38,6 +38,12 @@ impl From<IndexError> for ApiError {
     }
 }
 
+impl From<kagura_core::txn::TxnError> for ApiError {
+    fn from(error: kagura_core::txn::TxnError) -> Self {
+        Self::new(error.code(), error)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub(crate) struct Settings {
@@ -201,6 +207,7 @@ impl Desktop {
             ));
         }
         let mut index = Index::open_for_library(&self.database, &root)?;
+        index.set_edits_dir(self.settings.with_file_name("edits"));
         let previous = self.settings_bytes()?;
         let selection = Settings {
             root: Some(display(&root)),
@@ -217,7 +224,17 @@ impl Desktop {
             encoded.push(b'\n');
             self.save_settings(&encoded)?;
         }
-        if let Err(error) = index.update(&root) {
+        let ready = index.update(&root).map_err(ApiError::from).and_then(|_| {
+            if let Err(error) = index.recover_edits(&root) {
+                // A failed switch must keep the UI's previous root paired with its own cache.
+                if let Some(old) = self.active.as_ref().filter(|old| old.root != root) {
+                    index.update(&old.root)?;
+                }
+                return Err(error.into());
+            }
+            Ok(())
+        });
+        if let Err(error) = ready {
             if changed {
                 if let Some(previous) = previous {
                     self.save_settings(&previous)?;
@@ -225,7 +242,7 @@ impl Desktop {
                     fs::remove_file(&self.settings).map_err(|e| ApiError::new("settings_write", e))?;
                 }
             }
-            return Err(error.into());
+            return Err(error);
         }
         let mut library = Library {
             root,

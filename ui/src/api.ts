@@ -10,6 +10,10 @@ import type { SongChildren } from './generated/SongChildren'
 import type { FolderOpened } from './generated/FolderOpened'
 import type { CheckReport } from './generated/CheckReport'
 import type { ApiError } from './generated/ApiError'
+import type { EditPatch } from './generated/EditPatch'
+import type { EditResult } from './generated/EditResult'
+import type { RecentEdits } from './generated/RecentEdits'
+import type { TagSuggestions } from './generated/TagSuggestions'
 
 export const pageSize = 200
 export const api = {
@@ -24,11 +28,19 @@ export const api = {
   children: (songId: string) => invoke<SongChildren>('song_children', { songId }),
   folder: (id: string) => invoke<FolderOpened>('open_folder', { id }),
   check: () => invoke<CheckReport>('run_check'),
+  edit: (id: string, patch: EditPatch, baseHash: string) => invoke<EditResult>('edit_asset', { id, patch, baseHash }),
+  undo: (entryId: string) => invoke<EditResult>('undo_edit', { entryId }),
+  edits: (limit: number) => invoke<RecentEdits>('list_edits', { limit }),
+  suggestTags: (query: string, limit: number) => invoke<TagSuggestions>('suggest_tags', { query, limit }),
 }
 
 function isApiError(error: unknown): error is ApiError {
   return !!error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
     && 'code' in error && typeof error.code === 'string'
+}
+
+export function isConflict(error: unknown) {
+  return isApiError(error) && error.code === 'conflict'
 }
 
 export function errorText(error: unknown) {

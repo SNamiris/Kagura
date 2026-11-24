@@ -3,6 +3,7 @@ use std::{fs, path::Path, sync::Mutex};
 use kagura_core::{
     check::CheckReport,
     index::{AssetDetail, AssetSummary, IndexChanges, SearchPage},
+    txn::{EditPatch, EditResult},
 };
 use serde_json::{json, Value};
 use tauri::{
@@ -68,7 +69,11 @@ fn command_typescript() {
             AssetSummary,
             CheckReport,
             SongChildren,
-            FolderOpened
+            FolderOpened,
+            EditPatch,
+            EditResult,
+            RecentEdits,
+            TagSuggestions
         );
     }
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ui/src/generated");
@@ -76,6 +81,29 @@ fn command_typescript() {
     let temp = tempfile::tempdir().unwrap();
     export(temp.path());
     sync_types(temp.path(), &target, write);
+}
+
+fn invoke_on(
+    window: &tauri::WebviewWindow<tauri::test::MockRuntime>,
+    cmd: &str,
+    body: Value,
+) -> Result<Value, Value> {
+    let request = tauri::webview::InvokeRequest {
+        cmd: cmd.into(),
+        callback: tauri::ipc::CallbackFn(0),
+        error: tauri::ipc::CallbackFn(1),
+        url: if cfg!(windows) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        }
+        .parse()
+        .unwrap(),
+        body: tauri::ipc::InvokeBody::Json(body),
+        headers: Default::default(),
+        invoke_key: tauri::test::INVOKE_KEY.to_owned(),
+    };
+    tauri::test::get_ipc_response(window, request).map(|r| r.deserialize::<Value>().unwrap())
 }
 
 #[test]
@@ -92,24 +120,7 @@ fn library_commands_use_the_mini_library_and_reject_external_paths() {
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
         .build()
         .unwrap();
-    let invoke = |cmd: &str, body: Value| {
-        let request = tauri::webview::InvokeRequest {
-            cmd: cmd.into(),
-            callback: tauri::ipc::CallbackFn(0),
-            error: tauri::ipc::CallbackFn(1),
-            url: if cfg!(windows) {
-                "http://tauri.localhost"
-            } else {
-                "tauri://localhost"
-            }
-            .parse()
-            .unwrap(),
-            body: tauri::ipc::InvokeBody::Json(body),
-            headers: Default::default(),
-            invoke_key: tauri::test::INVOKE_KEY.to_owned(),
-        };
-        tauri::test::get_ipc_response(&window, request).map(|r| r.deserialize::<Value>().unwrap())
-    };
+    let invoke = |cmd, body| invoke_on(&window, cmd, body);
     assert_eq!(invoke("get_settings", json!({})).unwrap(), json!({"root": null}));
     assert_eq!(invoke("stats", json!({})).unwrap_err()["code"], "library_closed");
     let library = invoke("open_library", json!({"root": root})).unwrap();
@@ -175,6 +186,69 @@ fn library_commands_use_the_mini_library_and_reject_external_paths() {
     assert_eq!(
         invoke("get_settings", json!({})).unwrap()["root"],
         library["root"]
+    );
+}
+
+#[test]
+fn editing_commands_roundtrip_through_ipc() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("mmd");
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../crates/kagura-core/tests/fixtures/mini_library");
+    for rel in kagura_core::scan::scan_library_for_check(&fixture).files {
+        let target = root.join(&rel);
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::copy(fixture.join(rel), target).unwrap();
+    }
+    let app = mock_builder()
+        .manage(Mutex::new(Desktop::new(temp.path().join("appdata/index.sqlite"))))
+        .invoke_handler(crate::handlers())
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .unwrap();
+    let invoke = |cmd, body| invoke_on(&window, cmd, body);
+    invoke("open_library", json!({"root":root})).unwrap();
+    let id = "00000000000000000000000001";
+    let detail = invoke("get_asset", json!({"id":id})).unwrap();
+    let base = &detail["base_hash"];
+    let original_path = Path::new(detail["absolute_path"].as_str().unwrap()).join("_asset.manifest.json");
+    let original = fs::read(&original_path).unwrap();
+    assert_eq!(base.as_str().unwrap().len(), 64);
+    assert!(invoke("edit_asset", json!({"id":id,"patch":{"key":{}},"baseHash":base})).is_err());
+    let patch = json!({"tags":["ipc-test"],"rating":4,"note":"一行\n二行","source":{"url":"https://example.org/asset"}});
+    let result = invoke("edit_asset", json!({"id":id,"patch":patch,"baseHash":base})).unwrap();
+    let saved = invoke("get_asset", json!({"id":id})).unwrap();
+    assert_eq!(saved["base_hash"], result["new_hash"]);
+    assert_eq!(saved["manifest"]["source"]["url"], patch["source"]["url"]);
+    assert_eq!(saved["summary"]["rating"], 4);
+    assert_eq!(
+        invoke("suggest_tags", json!({"query":"ipc","limit":10})).unwrap(),
+        json!(["ipc-test"])
+    );
+    let conflict = invoke(
+        "edit_asset",
+        json!({"id":id,"patch":{"note":"stale"},"baseHash":base}),
+    )
+    .unwrap_err();
+    assert_eq!(conflict["code"], "conflict");
+    let history = invoke("list_edits", json!({"limit":5})).unwrap();
+    assert_eq!(history[0]["entry_id"], result["entry_id"]);
+    let undone = invoke("undo_edit", json!({"entryId":result["entry_id"]})).unwrap();
+    assert_eq!(&undone["new_hash"], base);
+    assert_eq!(fs::read(original_path).unwrap(), original);
+    assert_eq!(
+        invoke("get_asset", json!({"id":id})).unwrap()["manifest"],
+        detail["manifest"]
+    );
+    assert_eq!(
+        invoke("suggest_tags", json!({"query":"ipc","limit":10})).unwrap(),
+        json!([])
+    );
+    assert_eq!(
+        invoke("list_edits", json!({"limit":1})).unwrap()[0]["undone"],
+        true
     );
 }
 
