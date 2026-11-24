@@ -1,15 +1,25 @@
-use std::path::{Path, PathBuf};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
 
-use rusqlite::{Connection, OptionalExtension, Statement};
+use rusqlite::{params, Connection, OptionalExtension, Statement, Transaction, TransactionBehavior};
 use serde::Serialize;
 use serde_json::Value;
 
 use super::{
-    paths::{checked_entry, display_path},
+    paths::{checked_entry, display_path, open_input},
     query::SUMMARY_COLUMNS,
-    AssetSummary, Index, IndexError,
+    store, AssetSummary, Index, IndexError,
 };
-use crate::{layout::expected_type, naming::check_rel};
+use crate::{
+    consts::MANIFEST,
+    layout::expected_type,
+    manifest::{self, MetadataRole},
+    naming::check_rel,
+    scan::{is_reparse, mtime_ns, Record},
+    schema::Schemas,
+};
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "bindings", derive(ts_rs::TS))]
@@ -34,6 +44,7 @@ pub struct AssetRef {
 pub struct AssetDetail {
     pub summary: AssetSummary,
     pub manifest: Value,
+    pub base_hash: String,
     pub absolute_path: String,
     pub file_count: usize,
     #[cfg_attr(feature = "bindings", ts(type = "number"))]
@@ -60,6 +71,99 @@ fn validate_asset_dir(dir: &str, asset_type: &str) -> Result<(), IndexError> {
         return Err(IndexError::Invalid(format!("无效的资产目录：{dir}")));
     }
     Ok(())
+}
+
+struct Snapshot {
+    value: Value,
+    base_hash: String,
+    directory: PathBuf,
+}
+
+/// Read one file under the current index identity. Sync its metadata in this same
+/// transaction so the detail, search fields and optimistic base describe the same bytes.
+fn current_manifest(tx: &Transaction<'_>, root: &Path, id: &str) -> Result<Option<Snapshot>, IndexError> {
+    let cached = tx
+        .query_row(
+            "SELECT rel_dir,type,manifest_json,manifest_mtime,manifest_size FROM assets WHERE id=?",
+            [id],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    (r.get::<_, i64>(3)?, r.get::<_, i64>(4)?),
+                ))
+            },
+        )
+        .optional()?;
+    let Some((dir, ty, json, cached_stamp)) = cached else {
+        return Ok(None);
+    };
+    validate_asset_dir(&dir, &ty)?;
+    let (mut path, _) = checked_entry(root, &dir, Some(MANIFEST))?;
+    let mut file = open_input(&path)?;
+    let before = file.metadata()?;
+    if is_reparse(&before) || !before.is_file() {
+        return Err(IndexError::Invalid(format!(
+            "manifest 不是普通文件：{}",
+            path.display()
+        )));
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let after = file.metadata()?;
+    if before.modified()? != after.modified()?
+        || bytes.len() as u64 != before.len()
+        || before.len() != after.len()
+    {
+        return Err(IndexError::Invalid(format!(
+            "读取期间 manifest 已改变：{}",
+            path.display()
+        )));
+    }
+    let stamp = (
+        mtime_ns(&before)?,
+        i64::try_from(bytes.len()).map_err(|e| IndexError::Invalid(e.to_string()))?,
+    );
+    let doc = manifest::parse_document(&bytes)?;
+    if doc.value["id"].as_str() != Some(id)
+        || doc.value["type"] != ty
+        || manifest::metadata_role(&doc.value) != MetadataRole::Asset
+    {
+        return Err(IndexError::Invalid(format!(
+            "磁盘上的资产标识或类型已改变，请重新扫描：{dir}"
+        )));
+    }
+    let record = Record {
+        dir,
+        value: doc.value,
+        format: doc.format,
+    };
+    if serde_json::to_string(&record.value)? != json {
+        let schemas = Schemas::load().map_err(|e| IndexError::Invalid(e.to_string()))?;
+        let issues = schemas
+            .validate_asset(&record.value, 1)
+            .map_err(|e| IndexError::Invalid(e.to_string()))?;
+        if let Some(issue) = issues.first() {
+            return Err(IndexError::Invalid(format!(
+                "{}: {} {}",
+                record.dir, issue.path, issue.message
+            )));
+        }
+        store::clear_asset_metadata(tx, id)?;
+        store::write_asset(tx, &record, id, stamp)?;
+    } else if stamp != cached_stamp {
+        tx.execute(
+            "UPDATE assets SET manifest_mtime=?, manifest_size=? WHERE id=?",
+            params![stamp.0, stamp.1, id],
+        )?;
+    }
+    path.pop();
+    Ok(Some(Snapshot {
+        value: record.value,
+        base_hash: blake3::hash(&bytes).to_hex().to_string(),
+        directory: path,
+    }))
 }
 
 // Look only at indexed payloads owned by this asset. Explicit previews retain manifest order.
@@ -136,6 +240,14 @@ impl Index {
 
     /// Resolve a directory from its cached asset ID, using the caller's active root as the boundary.
     pub fn asset_directory(&self, root: &Path, id: &str) -> Result<Option<PathBuf>, IndexError> {
+        self.indexed_path(root, id, None)
+    }
+
+    pub fn manifest_path(&self, root: &Path, id: &str) -> Result<Option<PathBuf>, IndexError> {
+        self.indexed_path(root, id, Some(MANIFEST))
+    }
+
+    fn indexed_path(&self, root: &Path, id: &str, file: Option<&str>) -> Result<Option<PathBuf>, IndexError> {
         let tx = self.conn.unchecked_transaction()?;
         let root = active_root(&tx, root)?;
         let row: Option<(String, String)> = tx
@@ -147,7 +259,7 @@ impl Index {
             return Ok(None);
         };
         validate_asset_dir(&dir, &ty)?;
-        let (path, _) = checked_entry(&root, &dir, None)?;
+        let (path, _) = checked_entry(&root, &dir, file)?;
         tx.commit()?;
         Ok(Some(PathBuf::from(display_path(&path))))
     }
@@ -166,25 +278,16 @@ impl Index {
     }
 
     pub fn asset_detail(&self, root: &Path, id: &str) -> Result<Option<AssetDetail>, IndexError> {
-        let tx = self.conn.unchecked_transaction()?;
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
         let root = active_root(&tx, root)?;
-        let row = tx
-            .query_row(
-                &format!("SELECT {SUMMARY_COLUMNS},a.manifest_json FROM assets a WHERE a.id=?"),
-                [id],
-                |row| {
-                    Ok((
-                        AssetSummary::from_row(row)?,
-                        row.get::<_, String>("manifest_json")?,
-                    ))
-                },
-            )
-            .optional()?;
-        let Some((mut summary, json)) = row else {
+        let Some(snapshot) = current_manifest(&tx, &root, id)? else {
             return Ok(None);
         };
-        validate_asset_dir(&summary.rel_dir, &summary.asset_type)?;
-        let (path, _) = checked_entry(&root, &summary.rel_dir, None)?;
+        let mut summary = tx.query_row(
+            &format!("SELECT {SUMMARY_COLUMNS} FROM assets a WHERE a.id=?"),
+            [id],
+            AssetSummary::from_row,
+        )?;
         {
             let mut previews = tx.prepare_cached(PREVIEWS)?;
             set_preview(&root, &mut summary, &mut previews)?;
@@ -204,8 +307,9 @@ impl Index {
             };
         let detail = AssetDetail {
             summary,
-            manifest: serde_json::from_str(&json)?,
-            absolute_path: display_path(&path),
+            manifest: snapshot.value,
+            base_hash: snapshot.base_hash,
+            absolute_path: display_path(&snapshot.directory),
             file_count: usize::try_from(file_count).map_err(|e| IndexError::Invalid(e.to_string()))?,
             total_bytes: u64::try_from(total_bytes).map_err(|e| IndexError::Invalid(e.to_string()))?,
             incoming: references(&tx, id, true)?,
@@ -214,5 +318,17 @@ impl Index {
         };
         tx.commit()?;
         Ok(Some(detail))
+    }
+
+    /// Synchronize one existing asset after an edit or recovery. Its payload files and
+    /// their cached hashes belong to the asset directory and need no new enumeration.
+    pub fn refresh_manifest(&mut self, root: &Path, id: &str) -> Result<(), IndexError> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let root = active_root(&tx, root)?;
+        current_manifest(&tx, &root, id)?
+            .ok_or_else(|| IndexError::Invalid(format!("索引中没有此资产：{id}")))?;
+        Ok(tx.commit()?)
     }
 }

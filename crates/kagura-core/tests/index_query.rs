@@ -62,6 +62,71 @@ fn populate(root: &Path) -> Index {
 }
 
 #[test]
+fn edits_refresh_just_the_changed_record_and_its_autocomplete_tags() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut index = populate(temp.path());
+    let root = temp.path().join("mmd");
+    let path = index.manifest_path(&root, MODEL).unwrap().unwrap();
+    let original = fs::read(&path).unwrap();
+    let stamp = fs::metadata(&path).unwrap().modified().unwrap();
+    let old_hash = blake3::hash(&original).to_hex().to_string();
+    let before = index.asset_detail(&root, MODEL).unwrap().unwrap();
+    assert_eq!(before.base_hash, old_hash);
+
+    // A manual edit can have the same size and mtime. The form must still get the
+    // new name and the hash of the exact same disk bytes, including an optional BOM.
+    let changed = String::from_utf8(original).unwrap().replace("Shared", "Edited");
+    fs::write(&path, &changed).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(stamp)
+        .unwrap();
+    let detail = index.asset_detail(&root, MODEL).unwrap().unwrap();
+    assert_eq!(
+        detail.base_hash,
+        blake3::hash(changed.as_bytes()).to_hex().as_str()
+    );
+    assert_ne!(detail.base_hash, old_hash);
+    assert_eq!(detail.manifest["name"], "Edited");
+    assert_eq!(detail.summary.name.as_deref(), Some("Edited"));
+    let mut value = detail.manifest;
+    value["tags"] = json!(["100%_rate", "new_tag"]);
+    value["note"] = json!("single-record-note");
+    value["rating"] = json!(1);
+    let bytes = [
+        b"\xef\xbb\xbf".as_slice(),
+        serde_json::to_vec(&value).unwrap().as_slice(),
+    ]
+    .concat();
+    fs::write(&path, &bytes).unwrap();
+    // A full rebuild or root-wide update would fail on this unrelated invalid manifest.
+    fs::write(index.manifest_path(&root, STAGE).unwrap().unwrap(), b"{").unwrap();
+    index.refresh_manifest(&root, MODEL).unwrap();
+    index.refresh_manifest(&root, MODEL).unwrap();
+    assert_eq!(index.suggest_tags("%_", 8).unwrap(), ["100%_rate"]);
+    assert!(index.suggest_tags("vocaloid", 8).unwrap().is_empty());
+    assert!(index.suggest_tags("", 0).unwrap().is_empty());
+    let filtered = SearchFilters {
+        tag: Some("new_tag".into()),
+        ..Default::default()
+    };
+    let page = index.search("single-record-note", &filtered, 5, 0).unwrap();
+    assert_eq!(page.total, 1);
+    assert_eq!(page.items[0].rating, Some(1));
+    assert_eq!(
+        index.asset_detail(&root, MODEL).unwrap().unwrap().base_hash,
+        blake3::hash(&bytes).to_hex().as_str()
+    );
+
+    value["id"] = json!(STAGE);
+    fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    assert!(index.refresh_manifest(&root, MODEL).is_err());
+    assert_eq!(index.get(MODEL).unwrap().unwrap()["id"], MODEL);
+}
+
+#[test]
 fn literal_search_covers_fts_fields_short_unicode_and_metacharacters() {
     let temp = tempfile::tempdir().unwrap();
     let index = populate(temp.path());

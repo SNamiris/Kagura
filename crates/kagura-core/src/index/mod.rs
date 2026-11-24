@@ -47,6 +47,7 @@ pub struct IndexChanges {
 pub struct Index {
     conn: Connection,
     path: PathBuf,
+    pub(crate) edits_dir: Option<PathBuf>,
 }
 
 impl Index {
@@ -111,7 +112,11 @@ impl Index {
         }
         tx.commit()?;
         conn.execute_batch("PRAGMA foreign_keys=ON")?;
-        Ok(Self { conn, path })
+        Ok(Self {
+            conn,
+            path,
+            edits_dir: None,
+        })
     }
 
     pub fn rebuild(&mut self, report: &ScanReport) -> Result<IndexChanges, IndexError> {
@@ -161,7 +166,7 @@ fn verify_cache(conn: &Connection, path: &Path) -> Result<i32, IndexError> {
     Ok(app_id)
 }
 
-fn resolve_output(path: &Path) -> io::Result<PathBuf> {
+pub(crate) fn resolve_output(path: &Path) -> io::Result<PathBuf> {
     let absolute = std::path::absolute(path)?;
     let mut missing = Vec::new();
     let mut ancestor = absolute.as_path();

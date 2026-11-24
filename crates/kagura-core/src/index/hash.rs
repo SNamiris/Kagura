@@ -1,11 +1,10 @@
 //! 按需计算资产文件的 BLAKE3。缓存有效性与增量扫描共用 size 和纳秒 mtime。
-use std::fs::{File, Metadata, OpenOptions};
-use std::io;
+use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{params, OptionalExtension};
 
-use super::{Index, IndexError};
+use super::{paths::open_input, Index, IndexError};
 use crate::scan::{is_reparse, mtime_ns};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -49,18 +48,6 @@ fn checked_path(root: &Path, dir: &str, rel: &str) -> Result<(PathBuf, Metadata)
 fn stamp(metadata: &Metadata) -> Result<(i64, i64), IndexError> {
     let size = i64::try_from(metadata.len()).map_err(|_| invalid("文件大小超出 SQLite 整数范围"))?;
     Ok((size, mtime_ns(metadata)?))
-}
-
-fn open_input(path: &Path) -> io::Result<File> {
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        // FILE_FLAG_OPEN_REPARSE_POINT: check the opened handle itself before reading.
-        options.custom_flags(0x0020_0000);
-    }
-    options.open(path)
 }
 
 impl Index {

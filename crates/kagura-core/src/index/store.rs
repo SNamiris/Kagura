@@ -202,10 +202,7 @@ fn synchronize(
     for record in records {
         let id = record_id(record)?;
         if cache.get(&record.dir).is_some_and(|asset| asset.id == id) {
-            remove_search_row(tx, id)?;
-            tx.prepare_cached("DELETE FROM refs WHERE from_id=?")?
-                .execute([id])?;
-            tx.prepare_cached("DELETE FROM tags WHERE id=?")?.execute([id])?;
+            clear_asset_metadata(tx, id)?;
             changes.updated += 1;
         } else {
             changes.inserted += 1;
@@ -240,11 +237,19 @@ fn remove_search_row(tx: &Transaction<'_>, id: &str) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn clear_asset_metadata(tx: &Transaction<'_>, id: &str) -> Result<()> {
+    remove_search_row(tx, id)?;
+    tx.prepare_cached("DELETE FROM refs WHERE from_id=?")?
+        .execute([id])?;
+    tx.prepare_cached("DELETE FROM tags WHERE id=?")?.execute([id])?;
+    Ok(())
+}
+
 fn strings(value: &Value) -> impl Iterator<Item = &str> {
     value.as_array().into_iter().flatten().filter_map(Value::as_str)
 }
 
-fn write_asset(tx: &Transaction<'_>, record: &Record, id: &str, stamp: FileStamp) -> Result<()> {
+pub(super) fn write_asset(tx: &Transaction<'_>, record: &Record, id: &str, stamp: FileStamp) -> Result<()> {
     let v = &record.value;
     let key = &v["key"];
     let author = key["author"].as_str();

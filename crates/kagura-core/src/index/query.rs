@@ -148,6 +148,19 @@ const SEARCH_FIELDS: [&str; 9] = [
 ];
 
 impl Index {
+    /// Existing labels most often used in this library. '%' and '_' are literal input.
+    pub fn suggest_tags(&self, query: &str, limit: usize) -> Result<Vec<String>, IndexError> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT tag FROM tags WHERE tag LIKE ?1 ESCAPE '\\' GROUP BY tag
+             ORDER BY count(*) DESC, tag COLLATE NOCASE, tag LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![literal_contains(query), i64::try_from(limit).unwrap_or(i64::MAX)],
+            |row| row.get(0),
+        )?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
     /// Search for a literal substring. An empty query browses all matching assets.
     pub fn search(
         &self,

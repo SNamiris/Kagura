@@ -3,7 +3,7 @@ import type { AssetRef } from "./AssetRef";
 import type { AssetSummary } from "./AssetSummary";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type AssetDetail = { summary: AssetSummary, manifest: JsonValue, absolute_path: string, file_count: number, total_bytes: number, outgoing: Array<AssetRef>, incoming: Array<AssetRef>,
+export type AssetDetail = { summary: AssetSummary, manifest: JsonValue, base_hash: string, absolute_path: string, file_count: number, total_bytes: number, outgoing: Array<AssetRef>, incoming: Array<AssetRef>,
 /**
  * Paths relative to the song directory, including files not described in manifest.audio.
  */

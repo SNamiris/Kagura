@@ -1,10 +1,23 @@
 use std::{
-    fs::{self, Metadata},
+    fs::{self, File, Metadata, OpenOptions},
+    io,
     path::{Component, Path, PathBuf},
 };
 
 use super::IndexError;
 use crate::scan::is_reparse;
+
+pub(super) fn open_input(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_FLAG_OPEN_REPARSE_POINT lets the caller check the actual opened handle.
+        options.custom_flags(0x0020_0000);
+    }
+    options.open(path)
+}
 
 /// Resolve an indexed directory or one of its files, rejecting reparse points at every level.
 pub(super) fn checked_entry(
