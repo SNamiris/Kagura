@@ -1,14 +1,13 @@
-use std::{collections::BTreeMap, env, error::Error, fs, path::PathBuf, time::Instant};
+#[path = "common/live_baseline.rs"]
+mod live_baseline;
+
+use std::{env, error::Error, fs, path::PathBuf, time::Instant};
 
 use kagura_core::{
     index::{Index, SearchFilters},
     scan::scan_library_for_check,
 };
 use rusqlite::{Connection, OpenFlags};
-
-fn counts(pairs: &[(&str, usize)]) -> BTreeMap<String, usize> {
-    pairs.iter().map(|&(name, n)| (name.to_owned(), n)).collect()
-}
 
 #[test]
 #[ignore = "set KAGURA_LIBRARY to the MMD root; the index is created in the system temp directory"]
@@ -57,19 +56,15 @@ fn real_index() -> Result<(), Box<dyn Error>> {
     println!("stats: {stats:?}");
     assert_eq!(
         stats.counts,
-        counts(&[
-            ("model", 2036),
-            ("stage", 1358),
-            ("song", 2220),
-            ("motion_part", 3210)
-        ])
+        live_baseline::counts(&live_baseline::destinations())
     );
-    for (kind, expected) in [("model", 1289), ("stage", 725), ("motion_part", 2898)] {
-        assert_eq!(stats.unknown_author.get(kind), Some(&expected), "{kind}");
+    let (unknown_author, explicit_license) = live_baseline::author_license_counts();
+    for (kind, expected) in unknown_author {
+        assert_eq!(stats.unknown_author.get(&kind), Some(&expected), "{kind}");
     }
     assert_eq!(stats.unknown_composer, 2206);
-    for (kind, expected) in [("model", 433), ("stage", 65)] {
-        assert_eq!(stats.explicit_license.get(kind), Some(&expected), "{kind}");
+    for (kind, expected) in explicit_license {
+        assert_eq!(stats.explicit_license.get(&kind), Some(&expected), "{kind}");
     }
 
     for query in ["ミク", "初音", "小苹果", "Tda", "ECHO"] {

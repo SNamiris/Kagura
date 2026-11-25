@@ -225,6 +225,7 @@ M3 收尾时 workspace 共 52 项测试全部通过，覆盖 Tauri 命令、编�
 - 2026-11-24 删除 `Library\Effects`（1,757 份记录，含 547 个 ray-mmd HDRI，约 42.6 GB）；记录清单在 `_design\migration_runs\effects-removal-20261124\`
 - 2026-11-24 15 组同名歌：11 组合并、Satisfaction 按 Remix 区分、bad guy / Gentleman / Say So 按剪辑长度拆分；日志在 `_design\migration_runs\song-dedup-20261124\`
 - 2026-11-24 全部 8,824 份 manifest 由 CRLF 统一转为 LF（只改换行，内容不变）；备份、日志与 `undo.py` 在 `_design\migration_runs\manifest-lf-20261124\`。`Library\.editorconfig` 规定记录文件用 LF
+- 2026-11-26 执行 78 组已审定的整份重复合并，归档 79 份资产（2,763,909,271 负载字节）。库内剩 8,745 份记录，检查 0 个问题，16 组重复留待人工确认。[执行与撤回记录](docs/reviews/dup-assets-20261126-applied.md)
 
 ---
 

@@ -1,3 +1,6 @@
+#[path = "common/live_baseline.rs"]
+mod live_baseline;
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -218,6 +221,9 @@ fn reports_all_seven_checks_and_each_reference_field() {
 fn real_library_is_consistent() {
     let root = std::env::var_os("KAGURA_LIBRARY").expect("set KAGURA_LIBRARY");
     let report = check_library(Path::new(&root));
-    assert_eq!(report.counts.values().sum::<usize>(), 8824);
+    assert_eq!(
+        report.counts,
+        live_baseline::counts(&live_baseline::destinations())
+    );
     assert!(report.findings.is_empty(), "{:#?}", report.findings);
 }

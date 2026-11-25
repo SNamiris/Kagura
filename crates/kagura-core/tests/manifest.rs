@@ -1,10 +1,12 @@
+#[path = "common/live_baseline.rs"]
+mod live_baseline;
+
 use kagura_core::consts::{FORMAT, MANIFEST};
 use kagura_core::manifest::{
     dumps, encode, metadata_role, parse, parse_document, read_document, AssetView, DocumentFormat,
     MetadataRole, NewlineStyle,
 };
 use kagura_core::schema::Schemas;
-use serde::Deserialize;
 use serde_json::json;
 use std::path::Path;
 
@@ -67,14 +69,6 @@ fn bom_order_unicode_and_numbers() {
         dumps(&json!(1.0)).unwrap().trim_end()
     );
     assert_eq!(parse(written.as_bytes()).unwrap(), exponent);
-}
-
-#[derive(Deserialize)]
-struct GoldenRecord {
-    id: String,
-    #[serde(rename = "type")]
-    ty: String,
-    dir: String,
 }
 
 #[test]
@@ -154,20 +148,16 @@ fn real_library_manifest_roundtrip() {
     let mut total = 0;
     let (mut crlf, mut lf, mut mixed, mut bom) = (0, 0, 0, 0);
     let mut examples = Vec::new();
-    for row in include_str!("golden/destination.jsonl").lines() {
-        let record: GoldenRecord = serde_json::from_str(row).unwrap();
-        let relative = format!("{}/{MANIFEST}", record.dir);
+    let expected = live_baseline::destinations();
+    for (id, (ty, directory)) in &expected {
+        let relative = format!("{directory}/{MANIFEST}");
         let raw = std::fs::read(root.join(&relative)).unwrap_or_else(|e| panic!("{relative}: {e}"));
         let document = parse_document(&raw).unwrap_or_else(|e| panic!("{relative}: {e}"));
         assert_eq!(metadata_role(&document.value), MetadataRole::Asset, "{relative}");
         let issues = schemas.validate_asset(&document.value, 8).unwrap();
         assert!(issues.is_empty(), "{relative}: {issues:?}");
         let view = AssetView::new(&document.value).unwrap();
-        assert_eq!(
-            (view.id, view.ty),
-            (record.id.as_str(), record.ty.as_str()),
-            "{relative}"
-        );
+        assert_eq!((view.id, view.ty), (id.as_str(), ty.as_str()), "{relative}");
 
         match document.format.newline {
             NewlineStyle::Crlf => crlf += 1,
@@ -186,7 +176,7 @@ fn real_library_manifest_roundtrip() {
         }
     }
     println!("manifest total={total}, byte_exact={exact}, CRLF={crlf}, LF={lf}, Mixed={mixed}, BOM={bom}, no_BOM={}", total - bom);
-    assert_eq!(total, 8824);
+    assert_eq!(total, expected.len());
     assert_eq!(exact, total, "前 10 个字节不一致的文件：{examples:?}");
     assert_eq!(lf, total, "迁移后的真实库应全部使用 LF");
 }

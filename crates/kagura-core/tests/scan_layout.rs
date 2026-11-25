@@ -1,3 +1,6 @@
+#[path = "common/live_baseline.rs"]
+mod live_baseline;
+
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -178,7 +181,7 @@ fn real_scan_and_destinations_match_python() {
     for record in &report.records {
         let ty = record.value["type"].as_str().unwrap();
         let id = record.value["id"].as_str().unwrap();
-        *counts.entry(ty).or_insert(0usize) += 1;
+        *counts.entry(ty.to_owned()).or_insert(0usize) += 1;
         assert!(
             actual
                 .insert(id.to_owned(), (ty.to_owned(), record.dir.clone()))
@@ -188,8 +191,8 @@ fn real_scan_and_destinations_match_python() {
         assert_eq!(destination(&record.value, &songs).unwrap(), record.dir, "{id}");
     }
     let summary: Value = serde_json::from_str(include_str!("golden/scan_summary.json")).unwrap();
-    assert_eq!(json!(counts), summary["counts"]);
-    assert_eq!(json!(actual.len()), summary["total"]);
+    let expected = live_baseline::destinations();
+    assert_eq!(counts, live_baseline::counts(&expected));
     let skipped: Vec<_> = report
         .skipped
         .iter()
@@ -204,16 +207,8 @@ fn real_scan_and_destinations_match_python() {
         })
         .collect();
     assert_eq!(json!(skipped), summary["skipped"]);
-    let mut verified = 0;
-    for line in include_str!("golden/destination.jsonl").lines() {
-        let row: Value = serde_json::from_str(line).unwrap();
-        let id = row["id"].as_str().unwrap();
-        let (ty, dir) = actual.remove(id).unwrap_or_else(|| panic!("ID 缺失或重复：{id}"));
-        assert_eq!(ty, row["type"].as_str().unwrap(), "{id}");
-        assert_eq!(dir, row["dir"].as_str().unwrap(), "{id}");
-        verified += 1;
-    }
-    assert!(actual.is_empty(), "unexpected IDs: {:?}", actual.keys());
+    let verified = expected.len();
+    assert_eq!(actual, expected);
     let reserved = report
         .pruned
         .iter()
